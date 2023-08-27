@@ -1,0 +1,23 @@
+from binance.client import Client
+
+# Replace with your own Binance API key and secret
+API_KEY = '5fyW0DEXWVCPOoCBRATcUsl44USDtBCovYCVNNv6LjBCjEwuH06W2L4Rc2YVwuUh'
+API_SECRET = 'C3HhLwDM88KLJlBirAVq1Yn94cP9Qu1HRGkI2qZ5ApN4sdcF1dlvHctPvAITxJkD'
+
+client = Client(API_KEY, API_SECRET)
+
+# Replace with your own Telegram Bot API token
+TELEGRAM_API_TOKEN = '6655743456:AAGGwfcD5Haosk9v9z_G78GN-wsh5ILYFZI'
+
+def get_all_trading_pairs():
+    exchange_info = client.get_exchange_info()
+    trading_pairs = [symbol['symbol'] for symbol in exchange_info['symbols']]
+    return trading_pairs
+
+def main():
+    trading_pairs = get_all_trading_pairs()
+    COIN_LIST = [pair[:-len('USDT')] for pair in trading_pairs if pair.endswith('USDT')]
+    print(COIN_LIST)
+
+if __name__ == '__main__':
+    main()

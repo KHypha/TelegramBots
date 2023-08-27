@@ -1,0 +1,88 @@
+import os
+import time
+import threading
+from binance.client import Client
+from binance.enums import KLINE_INTERVAL_1MINUTE
+from datetime import datetime
+from ta.trend import MACD
+from ta.volatility import BollingerBands
+from telegram.ext import Updater, CommandHandler
+import pandas as pd
+
+API_KEY = '0gtKKENzEpaVaHne81pbd4FU5UW3sgGQVM7d5EHpa50WEwD3HPLcQyvGI8syKuiV'
+API_SECRET = 'LGN1vsVJJl3jhompxIxS14X00WxDKePwNTnopxMeVuYNiHUBApzmHbGINypoc92S'
+client = Client(API_KEY, API_SECRET)
+
+# Telegram API token
+telegram_token = '6697658851:AAHNgeRrsqZCNwwpHJGW6cYqyzq3r9Vui8k'
+updater = Updater(token=telegram_token, use_context=True)
+dispatcher = updater.dispatcher
+# List of trading symbols
+def get_all_trading_pairs():
+    exchange_info = client.get_exchange_info()
+    trading_pairs = [symbol['symbol'] for symbol in exchange_info['symbols']]
+    return trading_pairs
+
+
+#symbols = get_all_trading_pairs()
+#symbols = [pair[:-len('USDT')] for pair in trading_pairs if pair.endswith('USDT')]
+# Dictionary to store user chat IDs
+user_chat_ids = {}
+symbols = ["BTCUSDT", "ETHUSDT", "LTCUSDT"]  # Add more symbols as needed
+
+# Initialize indicators for each symbol
+indicators = {symbol: {"macd": MACD(pd.Series([float(kline[4]) for kline in client.futures_klines(symbol=symbol, interval=KLINE_INTERVAL_1MINUTE)])),
+                      "bbands": BollingerBands(pd.Series([float(kline[4]) for kline in client.futures_klines(symbol=symbol, interval=KLINE_INTERVAL_1MINUTE)]))}
+              for symbol in symbols}
+
+# Function to check for scalping signals
+def check_scalping_signals(context):
+    while True:
+        for symbol in symbols:
+            current_time = datetime.now()
+            try:
+                macd_indicator = indicators[symbol]["macd"]
+                if len(macd_indicator.macd()) > 0:
+                    macd_value = macd_indicator.macd()[-1]
+                klines = client.futures_klines(symbol=symbol, interval=KLINE_INTERVAL_1MINUTE)
+                if klines and len(klines) > 0:
+                    close_price = float(klines[-1][4])
+                else:
+                    # Handle the case where klines is empty or doesn't have enough data
+                    print(f"No kline data available for {symbol}.")
+                    close_price = 0.0 
+                signal = None
+
+                if macd_value > 0 and close_price > indicators[symbol]["bbands"].bollinger_hband()[-1]:
+                    signal = "Sell"
+                elif macd_value < 0 and close_price < indicators[symbol]["bbands"].bollinger_lband()[-1]:
+                    signal = "Buy"
+
+                if signal:
+                    for chat_id in user_chat_ids.values():
+                        message = f"{signal} {symbol} entry: {close_price:.2f}"
+                        context.bot.send_message(chat_id=chat_id, text=message)
+            except Exception as e:
+                print(f"Error processing {symbol}: {e}")
+        time.sleep(60)  # Check every minute
+
+# Command handler for /start
+def start(update, context):
+    user_chat_ids[update.effective_chat.username] = update.effective_chat.id
+    context.bot.send_message(chat_id=update.effective_chat.id, text="Bot started. Use /checksig to check signals.")
+
+# Command handler for /checksig
+def check_signals(update, context):
+    check_scalping_signals(context)
+
+# Add command handlers
+start_handler = CommandHandler('start', start)
+check_signals_handler = CommandHandler('checksig', check_signals)
+dispatcher.add_handler(start_handler)
+dispatcher.add_handler(check_signals_handler)
+
+# Start the bot
+updater.start_polling()
+
+# Keep the script running
+updater.idle()

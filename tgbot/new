@@ -1,0 +1,129 @@
+import telegram
+import requests
+from binance.client import Client
+from threading import Thread
+import time
+import random
+from binance.enums import KLINE_INTERVAL_1MINUTE
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, CallbackContext
+
+API_KEY = '5fyW0DEXWVCPOoCBRATcUsl44USDtBCovYCVNNv6LjBCjEwuH06W2L4Rc2YVwuUh'
+API_SECRET = 'C3HhLwDM88KLJlBirAVq1Yn94cP9Qu1HRGkI2qZ5ApN4sdcF1dlvHctPvAITxJkD'
+
+
+TELEGRAM_API_TOKEN = '6401564805:AAFJ34xVFl_3XrtyXWMlUoPjHiOhGTQndgk'
+
+class BinanceBot:
+    def __init__(self):
+        self.updater = Updater(token=TELEGRAM_API_TOKEN, use_context=True)
+        self.dp = self.updater.dispatcher
+        self.client = Client(API_KEY, API_SECRET)
+        self.dp.add_handler(CommandHandler("start", self.start))
+        self.dp.add_handler(CommandHandler("info", self.info))
+        self.positions_thread = Thread(target=self.update_positions)
+        self.balances_thread = Thread(target=self.update_balances)
+        self.pnl_thread = Thread(target=self.update_pnl)
+        self.positions_thread.daemon = True
+        self.balances_thread.daemon = True
+        self.pnl_thread.daemon = True
+        self.positions_thread.start()
+        self.balances_thread.start()
+        self.pnl_thread.start()
+        self.last_info_message_id = None
+        self.update_info()
+
+    def start(self, update, context):
+        update.message.reply_text("Welcome to your Binance bot! Please select an option:")
+
+    def info(self, update, context):
+        chat_id = update.message.chat_id
+        full_info_message = self.get_full_info()
+        context.bot.send_message(chat_id=chat_id, text=full_info_message, parse_mode=telegram.ParseMode.MARKDOWN)
+
+    def info(self, update, context):
+        chat_id = update.message.chat_id
+        full_info_message = self.get_full_info()
+        context.bot.send_message(chat_id=chat_id, text=full_info_message, parse_mode=telegram.ParseMode.MARKDOWN)
+
+    def update_info(self, chat_id):
+        while True:
+            full_info_message = self.get_full_info()
+            if self.last_info_message_id is None:
+                message = self.updater.bot.send_message(chat_id=chat_id, text=full_info_message, parse_mode=telegram.ParseMode.MARKDOWN)
+                self.last_info_message_id = message.message_id
+            else:
+                self.updater.bot.edit_message_text(chat_id=chat_id, message_id=self.last_info_message_id, text=full_info_message, parse_mode=telegram.ParseMode.MARKDOWN)
+            time.sleep(5)  # Update every 5 seconds
+
+    def update_positions(self):
+        while True:
+            self.positions = self.fetch_positions()
+            time.sleep(60)  # Update every 1 minute
+
+    def update_balances(self):
+        while True:
+            self.balances, self.unrealized_pnl = self.fetch_balances()
+            time.sleep(60)  # Update every 1 minute
+
+    def update_pnl(self):
+        while True:
+            self.pnl_positions = self.fetch_positions()
+            time.sleep(60)  # Update every 1 minute
+
+    def format_positions(self, positions):
+        formatted_messages = []
+        formatted_message = "📊 Open Positions:\n"
+        
+        for position in positions:
+            shape = "🟢" if position['positionSide'] == "LONG" else "🔴"
+            entry = f"{shape} {position['symbol']} {position['leverage']}✖️  Notional Size: {position['positionAmt']}\n"
+            entry += f"📌 Entry Price: {float(position['entryPrice']):.4f} \n 💹Mark Price: {float(position['markPrice']):.4f}\n"
+            entry += f"📈 PNL: {float(position['unRealizedProfit']):.4f}\n"
+
+            if len(formatted_message) + len(entry) <= telegram.constants.MAX_MESSAGE_LENGTH:
+                formatted_message += entry
+            else:
+                formatted_messages.append(formatted_message)
+                formatted_message = "📊 Open Positions:\n" + entry
+                
+        formatted_messages.append(formatted_message)
+        return formatted_messages
+
+    def format_pnl_message(self, positions):
+        pnl_message = "Unrealized PnL and ROE% for each position:\n\n"
+        small_random_number = random.uniform(1, 10)
+        
+        for position in positions:
+            symbol = position['symbol']
+            unrealized_pnl = float(position['unRealizedProfit'])
+            entry_price = float(position['entryPrice'])
+            mark_price = float(position['markPrice'])
+            position_size = float(position['positionAmt'])
+            leverage = float(position['leverage'])
+            
+            if entry_price != 0:
+                roe = (((mark_price - entry_price) / entry_price) * 100) * leverage
+                pnl_message += f"Symbol: {symbol}\n"
+                pnl_message += f"Unrealized PnL: {unrealized_pnl:.4f}\n"
+                pnl_message += f"ROE%: {roe:.4f}%\n"
+                pnl_message += f"Mark Price: {mark_price:.4f}\n"
+                pnl_message += f"Timestamp: {int(time.time())}{small_random_number:.1f}\n\n"
+        
+        return pnl_message
+
+    def format_balances(self, balances, unrealized_pnl):
+        total_balance = sum(float(balance['walletBalance']) for balance in balances) + unrealized_pnl
+        message = f"💰 Total Balance: 💲{total_balance}\n\n📈 Asset Balances:\n"
+        message += f"🤑 Unrealized PnL: 💲{unrealized_pnl:.4f}\n"
+        
+        for balance in balances:
+            if float(balance['walletBalance']) > 0.0:
+                message += f"💳 {balance['asset']}: 💲{float(balance['walletBalance']):.4f}\n"
+                
+        return message
+
+if __name__ == "__main__":
+    bot = BinanceBot()
+    bot.updater.start_polling()
+    bot.updater.idle()

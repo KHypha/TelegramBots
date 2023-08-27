@@ -1,0 +1,185 @@
+from binance.client import Client
+import time
+import threading
+from ta import momentum
+from ta.trend import MACD
+
+from ta.trend import SMAIndicator
+
+from ta.utils import dropna
+from ta.momentum import RSIIndicator
+from telegram import Update
+from telegram.ext import Updater, CommandHandler, CallbackContext
+import pandas as pd
+import numpy as np
+from ta.trend import EMAIndicator
+from ta.volatility import BollingerBands
+
+
+
+API_KEY = '0gtKKENzEpaVaHne81pbd4FU5UW3sgGQVM7d5EHpa50WEwD3HPLcQyvGI8syKuiV'
+API_SECRET = 'LGN1vsVJJl3jhompxIxS14X00WxDKePwNTnopxMeVuYNiHUBApzmHbGINypoc92S'
+TELEGRAM_API_TOKEN = '6697658851:AAHNgeRrsqZCNwwpHJGW6cYqyzq3r9Vui8k'
+
+
+client = Client(API_KEY, API_SECRET)
+updater = Updater(token=TELEGRAM_API_TOKEN, use_context=True)
+dispatcher = updater.dispatcher
+
+symbol = 'TRXUSDT'
+trade_quantity = 150
+
+rsi_period = 14
+short_term_period = 50  # Changed to 50 for EMA
+long_term_period = 100  # Changed to 100 for EMA
+
+running_scalp_bot = False
+trade_timestamps = []  # Store timestamps when trades are opened
+stop_event = threading.Event()  # Event to signal the bot to stop
+
+def calculate_profit(entry_price, exit_price, quantity):
+    return (exit_price - entry_price) * quantity
+
+def place_market_order(chat_id, side, positionSide):
+    try:
+        order = client.futures_create_order(
+            symbol=symbol,
+            side=side,
+            type=Client.ORDER_TYPE_MARKET,
+            quantity=trade_quantity,
+            positionSide=positionSide
+        )
+        return order
+    except Exception as e:
+        message = f"An error occurred: {e}"
+        updater.bot.send_message(chat_id=chat_id, text=message)
+        return None
+
+def place_limit_order(chat_id, side, positionSide, price, entry_price, exit_price):
+    try:
+        order = client.futures_create_order(
+            symbol=symbol,
+            side=side,
+            type=Client.ORDER_TYPE_LIMIT,
+            quantity=trade_quantity,
+            positionSide=positionSide,
+            price=price,
+            timeInForce='GTC'  # Specify time in force as 'GTC'
+        )
+        # Order placement successful, send a success message to the user
+        success_message = f"Limit order placed at price: {price:.5f} entry price: {entry_price:.5f}"
+        potential_profit = calculate_profit(entry_price, exit_price, trade_quantity)
+        profit_message = f"Potential Profit: ${potential_profit:.2f}"
+        updater.bot.send_message(chat_id=chat_id, text=success_message)
+        updater.bot.send_message(chat_id=chat_id, text=profit_message)
+
+        return order
+    except Exception as e:
+        message = f"An error occurred: {e}"
+        updater.bot.send_message(chat_id=chat_id, text=message)
+        return None
+ 
+def analyze_market_data(chat_id):
+    klines = client.futures_klines(symbol=symbol, interval=Client.KLINE_INTERVAL_1MINUTE)
+    closing_prices = [float(kline[4]) for kline in klines]
+
+    # Calculate the MACD and its signal line
+    macd = MACD(pd.Series(closing_prices), window_slow=26, window_fast=12, window_sign=9)
+    macd_signal = macd.macd_signal()
+
+    # Calculate the short-term and long-term EMAs
+    short_term_ema = EMAIndicator(pd.Series(closing_prices), window=short_term_period).ema_indicator()
+    long_term_ema = EMAIndicator(pd.Series(closing_prices), window=long_term_period).ema_indicator()
+
+    if macd_signal.iloc[-1] > 0 and short_term_ema.iloc[-1] > long_term_ema.iloc[-1]:
+        return "BUY"
+    elif macd_signal.iloc[-1] < 0 and short_term_ema.iloc[-1] < long_term_ema.iloc[-1]:
+        return "SELL"
+    else:
+        return None 
+
+def can_open_trade():
+    now = time.time()
+    # Check if more than 2 trades have been opened within the last 5 minutes
+    recent_trades = [timestamp for timestamp in trade_timestamps if now - timestamp <= 300]
+    return len(recent_trades) < 2
+
+def scalping_bot(update: Update, context: CallbackContext):
+    global running_scalp_bot, stop_event
+    if running_scalp_bot:
+        update.message.reply_text("Scalping bot is already running. Use /stop to stop it.")
+        return
+
+    running_scalp_bot = True
+    chat_id = update.message.chat_id
+    update.message.reply_text("Scalping bot started. Use /stop to stop it.")
+    
+    last_opportunity = None  # Variable to track the last opportunity (BUY or SELL)
+    first_trade_skipped = False  # To skip the first trade after scalping starts
+
+    while not stop_event.is_set():
+        opportunity = analyze_market_data(chat_id)
+
+        if not first_trade_skipped:
+            first_trade_skipped = True
+            last_opportunity = opportunity
+            time.sleep(10)
+            continue
+    while not stop_event.is_set():
+        opportunity = analyze_market_data(chat_id)
+
+        if opportunity != last_opportunity:
+            if opportunity == "BUY":
+                buy_order = place_market_order(chat_id, Client.SIDE_BUY, 'LONG')
+                if buy_order:
+                    ticker = client.futures_ticker(symbol=symbol)  # Fetch the latest ticker price
+                    last_price = float(ticker['lastPrice'])  # Extract the last price from the ticker
+                    message = "Buy order (LONG) placed."
+                    context.bot.send_message(chat_id=chat_id, text=message)
+                    limit_order_price = round(last_price * 1.001, 5)  # Round the limit order price to 5 decimal places
+                    if limit_order_price > 0:  # Check if the calculated price is valid
+                        place_limit_order(chat_id, Client.SIDE_SELL, 'LONG', limit_order_price, last_price, limit_order_price)
+                        trade_timestamps.append(time.time())
+                    else:
+                        print("Invalid limit order price:", limit_order_price)
+            elif opportunity == "SELL":
+                sell_order = place_market_order(chat_id, Client.SIDE_SELL, 'SHORT')
+                if sell_order:
+                    ticker = client.futures_ticker(symbol=symbol)  # Fetch the latest ticker price
+                    last_price = float(ticker['lastPrice'])  # Extract the last price from the ticker
+                    message = "Sell order (SHORT) placed."
+                    context.bot.send_message(chat_id=chat_id, text=message)
+                    limit_order_price = round(last_price * 0.999, 5)  # Round the limit order price to 5 decimal places
+                    if limit_order_price > 0:  # Check if the calculated price is valid
+                        place_limit_order(chat_id, Client.SIDE_BUY, 'SHORT', limit_order_price, last_price, limit_order_price)
+                        trade_timestamps.append(time.time())
+                    else:
+                        print("Invalid limit order price:", limit_order_price)
+            last_opportunity = opportunity
+
+        time.sleep(10)
+
+    running_scalp_bot = False
+    stop_event.clear()
+
+def stop_scalping_bot(update: Update, context: CallbackContext):
+    global running_scalp_bot, stop_event
+    if running_scalp_bot:
+        stop_event.set()  # Set the event flag to stop the bot
+        update.message.reply_text("Stopping scalping bot. It will stop shortly.")
+    else:
+        update.message.reply_text("Scalping bot is not running.")
+
+def start(update: Update, context: CallbackContext):
+    user_id = update.message.from_user.id
+    context.bot.send_message(chat_id=user_id, text="Welcome to your scalping bot! Use /scalp to start scalping.")
+
+if __name__ == "__main__":
+    start_handler = CommandHandler('start', start)
+    scalp_handler = CommandHandler('scalp', scalping_bot)
+    stop_handler = CommandHandler('stop', stop_scalping_bot)
+    dispatcher.add_handler(start_handler)
+    dispatcher.add_handler(scalp_handler)
+    dispatcher.add_handler(stop_handler)
+    
+    updater.start_polling()

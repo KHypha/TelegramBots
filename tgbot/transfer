@@ -1,0 +1,66 @@
+import telegram
+from telegram.ext import Updater, CommandHandler
+from binance.client import Client
+import threading
+import time
+import requests
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext
+
+
+API_KEY = '0gtKKENzEpaVaHne81pbd4FU5UW3sgGQVM7d5EHpa50WEwD3HPLcQyvGI8syKuiV'
+API_SECRET = 'LGN1vsVJJl3jhompxIxS14X00WxDKePwNTnopxMeVuYNiHUBApzmHbGINypoc92S'
+
+#API_KEY = '5fyW0DEXWVCPOoCBRATcUsl44USDtBCovYCVNNv6LjBCjEwuH06W2L4Rc2YVwuUh'
+#API_SECRET = 'C3HhLwDM88KLJlBirAVq1Yn94cP9Qu1HRGkI2qZ5ApN4sdcF1dlvHctPvAITxJkD'
+
+client = Client(API_KEY, API_SECRET)
+
+# Replace with your own Telegram Bot API token
+YOUR_TELEGRAM_BOT_TOKEN = '6247332516:AAE8L_V1HKzNi0tpDVscKtiFhVxeyo-mu04'
+
+def transfer_to_futures(asset, amount):
+    endpoint = "https://fapi.binance.com/fapi/v1/futures/transfer"
+    params = {
+        "asset": asset,
+        "amount": amount,
+        "type": 2  # Transfer from spot to futures
+    }
+    headers = {
+        "X-MBX-APIKEY": API_KEY
+    }
+
+    response = requests.post(endpoint, params=params, headers=headers)
+    data = response.json()
+
+    if response.status_code == 200:
+        return f"Transfer successful. Tx ID: {data.get('tranId')}"
+    else:
+        return f"Transfer failed. Error message: {data.get('msg')}"
+
+def transfer_to_futures_handler(update: Update, context: CallbackContext):
+    try:
+        message = update.message.text.split()  # Split the message into words
+        asset = message[1]  # Second word should be the asset symbol
+        amount = float(message[2])  # Third word should be the amount to transfer
+
+        # Call the transfer function and handle the response
+        response = transfer_to_futures(asset, amount)
+        update.message.reply_text(f"Transfer to futures: {response}")
+    except Exception as e:
+        update.message.reply_text(f"Error: {e}")
+
+def main():
+    # Initialize the Telegram bot
+    updater = Updater(token=YOUR_TELEGRAM_BOT_TOKEN, use_context=True)
+    dispatcher = updater.dispatcher
+
+    # Add command handler
+    dispatcher.add_handler(CommandHandler('transfer_to_futures', transfer_to_futures_handler))
+
+    # Start the bot
+    updater.start_polling()
+    updater.idle()
+
+if __name__ == '__main__':
+    main()

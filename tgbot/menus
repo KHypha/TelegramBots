@@ -1,0 +1,92 @@
+from binance.client import Client
+from telegram import Bot, Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler
+
+
+from binance.client import Client
+
+API_KEY = '5fyW0DEXWVCPOoCBRATcUsl44USDtBCovYCVNNv6LjBCjEwuH06W2L4Rc2YVwuUh'
+API_SECRET = 'C3HhLwDM88KLJlBirAVq1Yn94cP9Qu1HRGkI2qZ5ApN4sdcF1dlvHctPvAITxJkD'
+
+client = Client(API_KEY, API_SECRET)
+
+# Replace with your own Telegram Bot API token
+TELEGRAM_API_TOKEN = '6655743456:AAGGwfcD5Haosk9v9z_G78GN-wsh5ILYFZI'
+bot = Bot(token=TELEGRAM_API_TOKEN)
+updater = Updater(token=TELEGRAM_API_TOKEN)
+
+trading_pairs = []  # List to store all trading pairs
+current_page = 0
+pairs_per_page = 10
+pairs_per_row = 5
+
+def get_all_trading_pairs():
+    exchange_info = client.get_exchange_info()
+    all_pairs = [symbol['symbol'] for symbol in exchange_info['symbols']]
+    return [pair for pair in all_pairs if pair.endswith('USDT')]
+
+def display_page(update: Update, context, page):
+    global current_page
+    current_page = page
+    start_index = page * pairs_per_page
+    end_index = start_index + pairs_per_page
+    pairs_to_display = trading_pairs[start_index:end_index]
+
+    keyboard = []
+    for i in range(0, len(pairs_to_display), pairs_per_row):
+        row = []
+        for j in range(i, min(i + pairs_per_row, len(pairs_to_display))):
+            row.append(InlineKeyboardButton(f"{j + 1}", callback_data=str(j + 1)))
+        keyboard.append(row)
+    
+    if page > 0:
+        keyboard.append([InlineKeyboardButton("<< Previous", callback_data="prev")])
+    if end_index < len(trading_pairs):
+        keyboard[-1].append(InlineKeyboardButton("Next >>", callback_data="next"))
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    message = f"Trading Pairs:\n\n"
+    for i, pair in enumerate(pairs_to_display):
+        message += f"{i + 1}. {pair}   "
+        if (i + 1) % pairs_per_row == 0:
+            message += "\n"
+    
+    query = update.callback_query
+    query.edit_message_text(text=message, reply_markup=reply_markup)
+
+def update_price(chat_id, pair):
+    ticker = client.get_ticker(symbol=pair)
+    price = ticker['lastPrice']
+    bot.send_message(chat_id=chat_id, text=f"Current {pair} price: {price}")
+
+def start(update: Update, context):
+    global trading_pairs
+    trading_pairs = get_all_trading_pairs()
+    query = update.callback_query
+    display_page(query, context, 0)
+
+def button_click(update: Update, context):
+    query = update.callback_query
+    query.answer()
+    button_data = query.data
+    
+    if button_data.isdigit():
+        selected_index = int(button_data) - 1
+        selected_pair = trading_pairs[current_page * pairs_per_page + selected_index]
+        update_price(query.message.chat.id, selected_pair)
+    elif button_data == "prev":
+        display_page(query, context, current_page - 1)
+    elif button_data == "next":
+        display_page(query, context, current_page + 1)
+
+def main():
+    dispatcher = updater.dispatcher
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CallbackQueryHandler(button_click))
+    
+    updater.start_polling()
+    updater.idle()
+
+if __name__ == '__main__':
+    main()
