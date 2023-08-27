@@ -15,10 +15,10 @@ from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, Callback
 from telegram import ReplyKeyboardMarkup, KeyboardButton
 
 
-#API_KEY = '0gtKKENzEpaVaHne81pbd4FU5UW3sgGQVM7d5EHpa50WEwD3HPLcQyvGI8syKuiV'
-#API_SECRET = 'LGN1vsVJJl3jhompxIxS14X00WxDKePwNTnopxMeVuYNiHUBApzmHbGINypoc92S'
-API_KEY = '5fyW0DEXWVCPOoCBRATcUsl44USDtBCovYCVNNv6LjBCjEwuH06W2L4Rc2YVwuUh'
-API_SECRET = 'C3HhLwDM88KLJlBirAVq1Yn94cP9Qu1HRGkI2qZ5ApN4sdcF1dlvHctPvAITxJkD'
+API_KEY = '0gtKKENzEpaVaHne81pbd4FU5UW3sgGQVM7d5EHpa50WEwD3HPLcQyvGI8syKuiV'
+API_SECRET = 'LGN1vsVJJl3jhompxIxS14X00WxDKePwNTnopxMeVuYNiHUBApzmHbGINypoc92S'
+#API_KEY = '5fyW0DEXWVCPOoCBRATcUsl44USDtBCovYCVNNv6LjBCjEwuH06W2L4Rc2YVwuUh'
+#API_SECRET = 'C3HhLwDM88KLJlBirAVq1Yn94cP9Qu1HRGkI2qZ5ApN4sdcF1dlvHctPvAITxJkD'
 
 
 client = Client(API_KEY, API_SECRET)
