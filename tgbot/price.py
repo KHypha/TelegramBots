@@ -1,12 +1,10 @@
-import time
-import random
-from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters
-#from binance.enums import FuturesSymbol
-from binance.client import Client
-#API_KEY = '5fyW0DEXWVCPOoCBRATcUsl44USDtBCovYCVNNv6LjBCjEwuH06W2L4Rc2YVwuUh'
-#API_SECRET = 'C3HhLwDM88KLJlBirAVq1Yn94cP9Qu1HRGkI2qZ5ApN4sdcF1dlvHctPvAITxJkD'
 
+from datetime import datetime
+import requests
+
+from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, MessageHandler, Filters, CallbackContext
+from binance.client import Client
 API_KEY = '5fyW0DEXWVCPOoCBRATcUsl44USDtBCovYCVNNv6LjBCjEwuH06W2L4Rc2YVwuUh'
 API_SECRET = 'C3HhLwDM88KLJlBirAVq1Yn94cP9Qu1HRGkI2qZ5ApN4sdcF1dlvHctPvAITxJkD'
 
@@ -17,228 +15,180 @@ TELEGRAM_API_TOKEN = '6655743456:AAGGwfcD5Haosk9v9z_G78GN-wsh5ILYFZI'
 
 bot = Bot(token=TELEGRAM_API_TOKEN)
 updater = Updater(token=TELEGRAM_API_TOKEN)
-user_prices = {}  # Dictionary to store user's price messages
-welcome_messages = [
-    "Welcome to the bot! How can I assist you today?",
-    "Hello! Feel free to explore the bot's features.",
-    "Greetings! What can I do for you?",
-]
-
-user_alerts = {}  # Store user alerts: {'chat_id': [alert_type, trading_pair, price, interval]}
+user_prices = {}
 trading_pairs = []
-def random_welcome_message():
-    return random.choice(welcome_messages)
-
-
 def get_all_trading_pairs():
     exchange_info = client.get_exchange_info()
     trading_pairs = [symbol['symbol'] for symbol in exchange_info['symbols']]
-    return trading_pairs
-
+    return [pair[:-len('USDT')] for pair in trading_pairs if pair.endswith('USDT')]
 
 trading_pairs = get_all_trading_pairs()
-trading_pairs = [pair[:-len('USDT')] for pair in trading_pairs if pair.endswith('USDT')]
-SELECT_COIN, MONITORING = range(2)
 
-def start(update: Update, context):
-    update.message.reply_text(random_welcome_message())
+
+def get_prices(trading_pair):
+    ticker = client.get_ticker(symbol=trading_pair)
+    last_price = float(ticker['lastPrice'])
+    price_info = client.futures_mark_price(symbol=trading_pair)
+    mark_price = float(price_info["markPrice"])
+    return last_price, mark_price
+
+def get_ohlc_data(trading_pair):
+    klines = client.futures_klines(symbol=trading_pair, interval=Client.KLINE_INTERVAL_1HOUR, limit=1)
+    if klines:
+        kline = klines[0]
+        open_price = float(kline[1])
+        high_price = float(kline[2])
+        low_price = float(kline[3])
+        close_price = float(kline[4])
+        return open_price, high_price, low_price, close_price
+    else:
+        return None
+
+def update_price(context: CallbackContext):
+    chat_id = context.job.context
+    user_data = user_prices.get(chat_id)
+    
+    if user_data:
+        trading_pair = user_data["trading_pair"]
+        last_price, mark_price = get_prices(trading_pair)
+        ohlc_data = get_ohlc_data(trading_pair)
+        
+        last_updated_time = datetime.now().strftime("%H:%M:%S")
+        
+        if ohlc_data:
+            open_price, high_price, low_price, close_price = ohlc_data
+
+            if close_price > open_price:
+                candle_color = "🟩"  # Green candlestick
+            elif close_price < open_price:
+                candle_color = "🟥"  # Red candlestick
+            else:
+                candle_color = "⬜"  # Neutral candlestick (Yellow or other color)
+
+            price_message = f"Mark Price  of {trading_pair}: {mark_price}\n" \
+                            f"Last Price: {last_price} \n" \
+                            f"OHLC(1 Hour){candle_color}:\n" \
+                            f"Open: {open_price} Close: {close_price}\n" \
+                            f"High: {high_price} Low: {low_price}\n" \
+                            f"Last Updated Time: {last_updated_time}"
+        else:
+            price_message = f"Last Price of {trading_pair}: {last_price}\n" \
+                            f"Mark Price: {mark_price}\n" \
+                            f"OHLC Data: Not available\n" \
+                            f"Last Updated Time: {last_updated_time}"
+        
+        context.bot.edit_message_text(chat_id=chat_id, message_id=user_data["message_id"], text=price_message)
+        user_data["last_updated_time"] = last_updated_time
+
+def get_top_movers():
+    # Define the endpoint URL
+    url = 'https://fapi.binance.com/fapi/v1/ticker/24hr'
+
+    # Make a GET request to fetch the 24-hour ticker data for all trading pairs
+    response = requests.get(url)
+    data = response.json()
+
+    # Filter the data to get only USD-M futures pairs
+    usd_m_futures_pairs = [pair for pair in data if pair['symbol'].endswith('USDT')]
+    
+    # Sort the pairs by their price change percentage (gainers and losers)
+    top_gainers = sorted(usd_m_futures_pairs, key=lambda x: float(x['priceChangePercent']), reverse=True)[:10]
+    top_losers = sorted(usd_m_futures_pairs, key=lambda x: float(x['priceChangePercent']))[:10]
+
+    return top_gainers, top_losers
+
+def display_top_movers(update: Update, context: CallbackContext):
+    top_gainers, top_losers = get_top_movers()
+
+    message = "🚀 Top Gainers:\n"
+    for gainer in top_gainers:
+        symbol = gainer['symbol']
+
+        price_change_percent = gainer['priceChangePercent']
+        emoji = "🔥" if float(price_change_percent) > 20 else ""
+
+        mark_price = float(get_mark_price(symbol))
+        message += f"🔼#{symbol}: {mark_price:.4f} {price_change_percent}%{emoji} \n"
+
+    message += "\n📉 Top Losers:\n"
+    for loser in top_losers:
+        symbol = loser['symbol']
+
+        price_change_percent = loser['priceChangePercent']
+        emoji = "🔥" if float(price_change_percent) < -20 else ""
+
+        mark_price = float(get_mark_price(symbol))
+        message += f"🔻#{symbol}: {mark_price:.4f} {price_change_percent}%{emoji} \n"
+
+    update.message.reply_text(message)
+
+def get_mark_price(symbol):
+    # Use the Binance API to fetch the mark price for the given symbol
+    mark_price_info = client.futures_mark_price(symbol=symbol)
+    mark_price = mark_price_info["markPrice"]
+    return mark_price
+
 
 def price(update: Update, context):
     keyboard = []
-    for i in range(0, len(trading_pairs), 10):
-        pairs_group = trading_pairs[i:i+10]
-        keyboard.append([InlineKeyboardButton(pair, callback_data=pair) for pair in pairs_group])
-    keyboard.append([InlineKeyboardButton("Back", callback_data="price_back")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text("Select a trading pair:", reply_markup=reply_markup)
+    start_index = context.user_data.get("start_index", 0)
+    end_index = start_index + 10 * 3  # Display 3 rows of 10 pairs each
+    pairs_to_display = trading_pairs[start_index:end_index]
 
-def alert(update: Update, context):
-    chat_id = update.message.chat_id
-    keyboard = [
-        [
-            InlineKeyboardButton("One Time Alert", callback_data=f'alert_one_time:{chat_id}'),
-            InlineKeyboardButton("Repeated Alert", callback_data=f'alert_repeated:{chat_id}'),
-            InlineKeyboardButton("Timely Alert", callback_data=f'alert_timely:{chat_id}'),
-        ]
-    ]
+    for i in range(0, len(pairs_to_display), 3):
+        pairs_group = pairs_to_display[i:i+3]
+        keyboard.append([InlineKeyboardButton(pair, callback_data=pair) for pair in pairs_group])
+
+    if end_index < len(trading_pairs):
+        keyboard.append([InlineKeyboardButton("Next 10", callback_data="next_10")])
+
+    if start_index > 0:
+        keyboard.append([InlineKeyboardButton("Previous 10", callback_data="prev_10")])
+
     reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text("Select an alert type:", reply_markup=reply_markup)
+    
+    if update.callback_query:
+        query = update.callback_query
+        query.answer()
+        query.message.edit_reply_markup(reply_markup)
+    else:
+        update.message.reply_text("Select a trading pair:", reply_markup=reply_markup)
 
 def button_click(update: Update, context):
     query = update.callback_query
     query.answer()
     callback_data = query.data
 
-    chat_id = str(query.message.chat_id)  # Convert chat_id to string for dictionary key
+    chat_id = str(query.message.chat_id)
 
     if callback_data in trading_pairs:
-        user_alerts[chat_id] = ["price", f"{callback_data}USDT"]  # Store user's selected trading pair with 'USDT'
-        trading_pair = user_alerts[chat_id][1]
-        price = get_price(trading_pair)
-        # Send the initial price message and store the message ID
-        price_message = query.message.reply_text(f"Selected trading pair: {trading_pair}\nCurrent price: {price}\nEnter the price to check:")
-        user_prices[chat_id] = {"trading_pair": trading_pair, "message_id": price_message.message_id}
-        # Schedule the update_price function to run periodically
-        context.job_queue.run_repeating(update_price, interval=0.1, context=chat_id)
-
-
+        user_prices[chat_id] = {"trading_pair": f"{callback_data}USDT"}
+        last_price, mark_price = get_prices(f"{callback_data}USDT")
+        last_updated_time = datetime.now().strftime("%H:%M:%S")
         
-    elif callback_data.startswith("alert_one_time"):
-        user_alerts[chat_id] = ["one_time"]
-        query.edit_message_text(text="Provide the trading pair for the alert:")
-    elif callback_data.startswith("alert_repeated"):
-        user_alerts[chat_id] = ["repeated"]
-        query.edit_message_text(text="Provide the trading pair for the alert:")
-    elif callback_data.startswith("alert_timely"):
-        user_alerts[chat_id] = ["timely"]
-        query.edit_message_text(text="Provide the trading pair for the alert:")
-    else:
-        query.edit_message_text(text="Invalid selection. Please choose from the provided options.")
-        return
-
-def handle_user_input(update: Update, context):
-    chat_id = str(update.message.chat_id)
-    user_input = update.message.text
-
-    if chat_id in user_alerts:
-        alert_type = user_alerts[chat_id][0]
-        if alert_type in ["one_time", "repeated", "timely"]:
-            if 'trading_pair' not in user_alerts[chat_id]:
-                user_alerts[chat_id].append(user_input)  # Store the trading pair
-                update.message.reply_text(f"Trading pair for the alert: {user_input}USDT\nNow, enter the price for the alert:")
-                return
-            elif 'price' not in user_alerts[chat_id]:
-                user_alerts[chat_id].append(user_input)  # Store the price
-                trading_pair = user_alerts[chat_id][1]
-                price = get_price(trading_pair)
-                update.message.reply_text(f"Trading pair: {trading_pair}\nCurrent price: {price}\nAlert price set to: {user_input}\nYour alert is active now.")
-                user_alerts.pop(chat_id)  # Clear the stored alert data
-                return
-        # Handle other cases
-        user_alerts.pop(chat_id)  # Clear the stored alert data
-    elif user_input in trading_pairs:
-        trading_pair = f"{user_input}USDT"  # Append 'USDT' to the selected trading pair
-
-        # Send the initial price message and store the message ID
-        price_message = update.message.reply_text(f"Price of {trading_pair}: {get_price(trading_pair)}")
-        user_prices[chat_id] = {"trading_pair": trading_pair, "message_id": price_message.message_id}
-
-        # Schedule the update_price function to run periodically
-        context.job_queue.run_repeating(update_price, interval=60, context=chat_id)
-    else:
-        update.message.reply_text("Invalid input. Please use the provided buttons or commands.")
-
-
-def handle_one_time_alert(chat_id, price):
-    user_alerts[chat_id].extend(["one_time", float(price)])
-    bot.send_message(chat_id, f"One-time alert set at price {price}")
-
-def handle_repeated_alert(chat_id, price):
-    user_alerts[chat_id].extend(["repeated", float(price)])
-    bot.send_message(chat_id, f"Repeated alert set at price {price}")
-
-def handle_timely_alert(chat_id, interval):
-    user_alerts[chat_id].extend(["timely", int(interval)])
-    trading_pair = user_alerts[chat_id][1]
-    bot.send_message(chat_id, f"Timely alert set for {trading_pair} with interval {interval} minutes")
-
-def check_alerts(context):
-    for chat_id, alert_data in user_alerts.items():
-        alert_type = alert_data[0]
-        trading_pair = alert_data[1]
-        if alert_type == "one_time":
-            price_threshold = alert_data[2]
-            current_price = get_price(trading_pair)
-            if current_price >= price_threshold:
-                bot.send_message(chat_id, f"Price of {trading_pair} exceeded {price_threshold}.")
-                user_alerts.pop(chat_id)  # Remove the one-time alert
-
-        elif alert_type == "repeated":
-            price_threshold = alert_data[2]
-            current_price = get_price(trading_pair)
-            if current_price >= price_threshold:
-                bot.send_message(chat_id, f"Price of {trading_pair} exceeded {price_threshold}.")
-
-        elif alert_type == "timely":
-            interval = alert_data[2]
-            last_check_time = alert_data[3] if len(alert_data) > 3 else 0
-            current_time = int(time.time())
-            if current_time - last_check_time >= interval * 60:
-                current_price = get_price(trading_pair)
-                bot.send_message(chat_id, f"Price of {trading_pair}: {current_price}")
-                user_alerts[chat_id][3] = current_time  # Update last_check_time
-
-    # Schedule the next alert check after 60 seconds
-    context.job_queue.run_once(check_alerts, when=60)
-
-def get_price(trading_pair):
-    #trading_pair = f"{trading_pair}USDT"
-    ticker = client.get_ticker(symbol=trading_pair)  # Use the Binance Client to fetch the price
-    price = ticker['lastPrice']
-    return price
-
-def get_mark_price(trading_pair):
-    #symbol_info = client.get_symbol_info(trading_pair)
-    #if symbol_info["contractType"] == FuturesSymbol.PERPETUAL:
-    mark_price = client.futures_mark_price(symbol=trading_pair)
-    return mark_price["markPrice"]
-    #else:
-        #ticker = client.get_ticker(symbol=trading_pair)
-        #return ticker['lastPrice']
-    
-def positions(update: Update, context):
-    chat_id = str(update.message.chat_id)
-    
-    # Get the user's account information
-    account_info = client.futures_account()
-    positions = account_info['positions']
-
-    message = "Current Positions and Unrealized PNL:\n"
-    
-    for position in positions:
-        if float(position['positionAmt']) != 0:
-            symbol = position['symbol']
-            position_amt = float(position['positionAmt'])
-            entry_price = float(position['entryPrice'])
-            mark_price = get_mark_price(symbol)
-            unrealized_pnl = (mark_price - entry_price) * position_amt
-
-            message += f"\nSymbol: {symbol}\nPosition Amount: {position_amt:.4f}\nEntry Price: {entry_price:.4f}\nMark Price: {mark_price:.4f}\nUnrealized PNL: {unrealized_pnl:.4f} USDT\n"
-
-    update.message.reply_text(message)
-
-    
-    
-def update_price(context):
-    chat_id = context.job.context
-    user_data = user_prices.get(chat_id)
-    
-    if user_data:
-        trading_pair = user_data["trading_pair"]
-        price = get_price(trading_pair)
-        small_random_number = random.uniform(0.00001, 0.0001)
+        price_message = f"Mark Price of {callback_data}USDT: {mark_price}\nMark Price: {last_price}\nLast Updated Time: {last_updated_time}"
         
-        markPrice = get_mark_price(trading_pair)
-        lastPrice = float(price) + small_random_number
+        price_message = query.message.reply_text(price_message)
         
-        context.bot.edit_message_text(chat_id=chat_id, message_id=user_data["message_id"], text=f"Last Price of {trading_pair}: {lastPrice}\n Mark Price : {markPrice}")
-        user_data["last_mark_price"] = price
+        user_prices[chat_id]["message_id"] = price_message.message_id
         
-        # Edit the previously sent message to update the price
+        context.job_queue.run_repeating(update_price, interval=2, first=0, context=chat_id)
+    elif callback_data == "next_10":
+        start_index = context.user_data.get("start_index", 0)
+        context.user_data["start_index"] = start_index + 10
+        price(update, context)
 
+    elif callback_data == "prev_10":
+        start_index = context.user_data.get("start_index", 0)
+        context.user_data["start_index"] = start_index - 10
+        price(update, context)
 
 def main():
     dispatcher = updater.dispatcher
-    dispatcher.add_handler(CommandHandler("start", start))
     dispatcher.add_handler(CommandHandler("price", price))
-    dispatcher.add_handler(CommandHandler("alert", alert))
     dispatcher.add_handler(CallbackQueryHandler(button_click))
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_user_input))
-    dispatcher.add_handler(CommandHandler("positions", positions))
+    dispatcher.add_handler(CommandHandler("topmovers", display_top_movers))
 
-    job_queue = updater.job_queue
-    job_queue.run_once(check_alerts, when=60)  # Schedule the first alert check after 60 seconds
-    
     updater.start_polling()
     updater.idle()
 
