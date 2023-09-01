@@ -153,7 +153,7 @@ def format_positions(positions):
     total_balance = sum(float(balance['walletBalance']) for balance in account_info['assets']) + unrealized_pnl
 
     total_unrealized_pnl = sum(float(position['unRealizedProfit']) for position in positions)
-    
+    pnl_threshold = -total_balance * 0.25
     formatted_messages = []
     formatted_message = ""
     # Display total unrealized PnL and total balance
@@ -174,6 +174,22 @@ def format_positions(positions):
         entry += f"📌 Entry Price: {entry_price:.4f} \n 💹Mark Price: {mark_price:.4f}\n"
         entry += f"🍡 liq Price: {float(position['liquidationPrice']):.4f} \n"
         entry += f"📈 PNL: {unrealized_pnl:.4f} ({roe:.4f}%)\n\n"
+        # Close the position if unrealized PNL reaches the threshold
+        if unrealized_pnl <= pnl_threshold:
+            close_order_side = 'SELL' if position['positionSide'] == 'LONG' else 'BUY'
+            close_quantity = abs(position_size)
+            # Create a market order to close the position
+            order = client.futures_create_order(
+                symbol=symbol,
+                side=close_order_side,
+                quantity=close_quantity,
+                type=Client.ORDER_TYPE_MARKET,
+                positionSide=position['positionSide']
+            )
+
+            entry += f"Position closed based on loss threshold."
+
+        
         if len(formatted_message) + len(entry) <= telegram.constants.MAX_MESSAGE_LENGTH:
             formatted_message += entry
         else:
