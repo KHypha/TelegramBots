@@ -279,32 +279,29 @@ def open_long(update, context):
 
     symbol = user_input[0]
     desired_quantity = float(user_input[1])
-    position_side = "LONG"  # Set position side to LONG
 
     try:
-        # Calculate the maximum allowed position size (75% of the account balance minus current position size)
+        # Calculate the maximum allowed position size for both LONG and SHORT sides
         account_info = client.futures_account()
         balances = account_info['assets']
         account_balance = sum(float(balance['walletBalance']) for balance in balances)
-        max_position_size = calculate_max_position_size(account_balance, symbol, position_side)
+        max_long_position_size, max_short_position_size = calculate_max_position_size(account_balance, symbol)
 
-        # Adjust the position size if it exceeds the maximum allowed size
-        quantity = min(desired_quantity, max_position_size)
-
-        if quantity <= 0:
-            context.bot.send_message(chat_id=chat_id, text="The desired position size exceeds the maximum allowed size.")
+        # Check if the desired quantity exceeds the maximum allowed size for the LONG side
+        if desired_quantity > max_long_position_size:
+            context.bot.send_message(chat_id=chat_id, text=f"The desired position size ({desired_quantity}) exceeds the maximum allowed size ({max_long_position_size}) for the LONG side.")
             return
 
         # Create the long position
         order = client.futures_create_order(
             symbol=symbol,
             side=Client.SIDE_BUY,
-            quantity=quantity,
+            quantity=desired_quantity,
             type=Client.ORDER_TYPE_MARKET,
-            positionSide=position_side
+            positionSide='LONG'
         )
 
-        context.bot.send_message(chat_id=chat_id, text=f"Hedge long position opened:\nSymbol: {symbol}\nQuantity: {quantity}\nPosition Side: {position_side}")
+        context.bot.send_message(chat_id=chat_id, text=f"Hedge long position opened:\nSymbol: {symbol}\nQuantity: {desired_quantity}\nPosition Side: LONG")
     except Exception as e:
         context.bot.send_message(chat_id=chat_id, text=f"An error occurred: {e}")
 
@@ -320,34 +317,32 @@ def open_short(update, context):
 
     symbol = user_input[0]
     desired_quantity = float(user_input[1])
-    position_side = "SHORT"  # Set position side to SHORT
 
     try:
-        # Calculate the maximum allowed position size (75% of the account balance minus current position size)
+        # Calculate the maximum allowed position size for both LONG and SHORT sides
         account_info = client.futures_account()
         balances = account_info['assets']
         account_balance = sum(float(balance['walletBalance']) for balance in balances)
-        max_position_size = calculate_max_position_size(account_balance, symbol, position_side)
+        max_long_position_size, max_short_position_size = calculate_max_position_size(account_balance, symbol)
 
-        # Adjust the position size if it exceeds the maximum allowed size
-        quantity = min(desired_quantity, max_position_size)
-
-        if quantity <= 0:
-            context.bot.send_message(chat_id=chat_id, text="The desired position size exceeds the maximum allowed size.")
+        # Check if the desired quantity exceeds the maximum allowed size for the SHORT side
+        if desired_quantity > max_short_position_size:
+            context.bot.send_message(chat_id=chat_id, text=f"The desired position size ({desired_quantity}) exceeds the maximum allowed size ({max_short_position_size}) for the SHORT side.")
             return
 
         # Create the short position
         order = client.futures_create_order(
             symbol=symbol,
             side=Client.SIDE_SELL,
-            quantity=quantity,
+            quantity=desired_quantity,
             type=Client.ORDER_TYPE_MARKET,
-            positionSide=position_side
+            positionSide='SHORT'
         )
 
-        context.bot.send_message(chat_id=chat_id, text=f"Hedge short position opened:\nSymbol: {symbol}\nQuantity: {quantity}\nPosition Side: {position_side}")
+        context.bot.send_message(chat_id=chat_id, text=f"Hedge short position opened:\nSymbol: {symbol}\nQuantity: {desired_quantity}\nPosition Side: SHORT")
     except Exception as e:
         context.bot.send_message(chat_id=chat_id, text=f"An error occurred: {e}")
+
 
 
 def close_position(update, context):
