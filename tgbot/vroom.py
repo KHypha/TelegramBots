@@ -153,7 +153,7 @@ def format_positions(positions):
     total_balance = sum(float(balance['walletBalance']) for balance in account_info['assets']) + unrealized_pnl
 
     total_unrealized_pnl = sum(float(position['unRealizedProfit']) for position in positions)
-    pnl_threshold = -total_balance * 0.25
+    pnl_threshold = -total_balance * 0.2
     formatted_messages = []
     formatted_message = ""
     # Display total unrealized PnL and total balance
@@ -231,11 +231,13 @@ def cancel_all_positions(update, context):
     
     try:
         positions = client.futures_position_information()
-        if not positions:
+        non_zero_positions = [position for position in positions if float(position['positionAmt']) != 0.0]
+
+        if not non_zero_positions:
             context.bot.send_message(chat_id=chat_id, text="No open positions found.")
             return
         
-        for position in positions:
+        for position in non_zero_positions:
             symbol = position['symbol']
             position_side = position['positionSide']
             order_side = "SELL" if position_side == "LONG" else "BUY"
@@ -253,6 +255,7 @@ def cancel_all_positions(update, context):
     
     except Exception as e:
         context.bot.send_message(chat_id=chat_id, text=f"An error occurred: {e}")
+
 
 def cancel_all_orders(update, context):
     chat_id = update.message.chat_id
@@ -363,7 +366,7 @@ def limit_order(update, context):
                                  "/limit_order LTCUSDT 2 BUY 66.15 LONG\n"
                                  "/limit_order  LTCUSDT 2 SELL 66.5 LONG\n"
                                  "/limit_order  LTCUSDT 2 BUY 66.15 SHORT\n"
-                                 "/limit_order  LTCUSDT 2 SELL 66.5 LONG")
+                                 "/limit_order  LTCUSDT 2 SELL 66.5 SHORT")
         return
 
     symbol = user_input[0]
@@ -397,9 +400,9 @@ def stop_loss(update, context):
     user_input = context.args
 
     if len(user_input) != 4:
-        context.bot.send_message(chat_id=chat_id, text="Usage: /stop_loss <symbol> <quantity> <side> <stop_price>"
-                                 "/stop_loss LTCUSDT 1 BUY 64.3"
-                                 "/stop_loss LTCUSDT 1 BUY 64.3")
+        context.bot.send_message(chat_id=chat_id, text="Usage: /stop_loss <symbol> <quantity> <side> <stop_price>\n"
+                                 "/stop_loss LTCUSDT 1 BUY 64.3\n"
+                                 "/stop_loss LTCUSDT 1 BUY 64.3\n")
         return
 
     symbol = user_input[0]
@@ -429,9 +432,9 @@ def take_profit(update, context):
     user_input = context.args
 
     if len(user_input) != 4:
-        context.bot.send_message(chat_id=chat_id, text="Usage: /take_profit <symbol> <quantity> <side> <stop_price>"
-                                 "/take_profit LTCUSDT 1 BUY 64.3"
-                                 "/take_profit LTCUSDT 1 SELL 64.3")
+        context.bot.send_message(chat_id=chat_id, text="Usage: /take_profit <symbol> <quantity> <side> <stop_price>\n"
+                                 "/take_profit LTCUSDT 1 BUY 64.3\n"
+                                 "/take_profit LTCUSDT 1 SELL 64.3\n")
         return
 
     symbol = user_input[0]
@@ -477,7 +480,7 @@ def cancel_order(update, context):
     chat_id = update.message.chat_id
     user_input = context.args
     if len(user_input) != 1:
-        context.bot.send_message(chat_id=chat_id, text="Usage: /cancel <symbol>"
+        context.bot.send_message(chat_id=chat_id, text="Usage: /cancel <symbol>\n"
                                  "/cancel LTCUSDT")
         return
     
