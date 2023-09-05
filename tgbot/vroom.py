@@ -254,11 +254,18 @@ def cancel_all_orders(update, context):
         context.bot.send_message(chat_id=chat_id, text=f"An error occurred: {e}")
 
 
-def calculate_max_position_size(account_balance, leverage, mark_price, percentage=0.75):
+def calculate_max_position_size(account_balance, leverage, mark_price, percentage=0.70):
     # Calculate maximum allowed position size for both LONG and SHORT sides
     max_long_position_size = (account_balance * percentage * leverage) / mark_price
     max_short_position_size = (account_balance * percentage * leverage) / mark_price
+    positions = client.futures_position_information()
+    non_zero_positions = [position for position in positions if float(position['positionAmt']) != 0.0]
+    used_quantity = 0
+    for position in non_zero_positions:            
+        used_quantity += abs(float(position['positionAmt']))
 
+    max_long_position_size -= used_quantity
+    max_short_position_size -= used_quantity
     return max_long_position_size, max_short_position_size
 
 def open_long(update, context):
