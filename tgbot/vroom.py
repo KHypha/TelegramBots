@@ -254,18 +254,12 @@ def cancel_all_orders(update, context):
         context.bot.send_message(chat_id=chat_id, text=f"An error occurred: {e}")
 
 
-def calculate_max_position_size(account_balance, symbol, position_side):
-    # Get the current positions for the specified symbol and position side
-    positions = client.futures_position_information(symbol=symbol)
-    current_position_size = 0.0
+def calculate_max_position_size(account_balance, leverage, mark_price, percentage=0.75):
+    # Calculate maximum allowed position size for both LONG and SHORT sides
+    max_long_position_size = (account_balance * percentage * leverage) / mark_price
+    max_short_position_size = (account_balance * percentage * leverage) / mark_price
 
-    for position in positions:
-        if position['positionSide'] == position_side:
-            current_position_size += float(position['positionAmt'])
-
-    # Calculate the maximum allowed position size (75% of the account balance minus current position size)
-    max_position_size = (account_balance * 0.75) - current_position_size
-    return max_position_size
+    return max_long_position_size, max_short_position_size
 
 def open_long(update, context):
     chat_id = update.message.chat_id
@@ -278,30 +272,34 @@ def open_long(update, context):
         return
 
     symbol = user_input[0]
-    desired_quantity = float(user_input[1])
+    quantity = float(user_input[1])
+    position_side = "LONG"  # Set position side to LONG
+
+    account_info = client.futures_account()
+    balances = account_info['assets']
+    account_balance = sum(float(balance['walletBalance']) for balance in balances)
+    leverage = 75
+    price_info = client.futures_mark_price(symbol=symbol)
+    mark_price = float(price_info["markPrice"])
+
+    # Calculate the maximum position size
+    max_long_position_size, _ = calculate_max_position_size(account_balance, leverage, mark_price)
+
+    if quantity > max_long_position_size:
+        context.bot.send_message(chat_id=chat_id, text=f"{account_balance} Quantity exceeds maximum position size ({max_long_position_size:.4f}). at {mark_price}")
+        return
 
     try:
-        # Calculate the maximum allowed position size for both LONG and SHORT sides
-        account_info = client.futures_account()
-        balances = account_info['assets']
-        account_balance = sum(float(balance['walletBalance']) for balance in balances)
-        max_long_position_size, max_short_position_size = calculate_max_position_size(account_balance, symbol)
-
-        # Check if the desired quantity exceeds the maximum allowed size for the LONG side
-        if desired_quantity > max_long_position_size:
-            context.bot.send_message(chat_id=chat_id, text=f"The desired position size ({desired_quantity}) exceeds the maximum allowed size ({max_long_position_size}) for the LONG side.")
-            return
-
         # Create the long position
         order = client.futures_create_order(
             symbol=symbol,
             side=Client.SIDE_BUY,
-            quantity=desired_quantity,
+            quantity=quantity,
             type=Client.ORDER_TYPE_MARKET,
-            positionSide='LONG'
+            positionSide=position_side
         )
 
-        context.bot.send_message(chat_id=chat_id, text=f"Hedge long position opened:\nSymbol: {symbol}\nQuantity: {desired_quantity}\nPosition Side: LONG")
+        context.bot.send_message(chat_id=chat_id, text=f"Hedge long position opened:\nSymbol: {symbol}\nQuantity: {quantity}\nPosition Side: {position_side}")
     except Exception as e:
         context.bot.send_message(chat_id=chat_id, text=f"An error occurred: {e}")
 
@@ -316,32 +314,37 @@ def open_short(update, context):
         return
 
     symbol = user_input[0]
-    desired_quantity = float(user_input[1])
+    quantity = float(user_input[1])
+    position_side = "SHORT"  # Set position side to SHORT
+    account_info = client.futures_account()
+    balances = account_info['assets']
+    account_balance = sum(float(balance['walletBalance']) for balance in balances)
+    leverage = 75
+    price_info = client.futures_mark_price(symbol=symbol)
+    mark_price = float(price_info["markPrice"])
+
+    # Calculate the maximum position size
+    _, max_short_position_size = calculate_max_position_size(account_balance,  leverage, mark_price)
+
+    if quantity > max_short_position_size:
+        context.bot.send_message(chat_id=chat_id, text=f"Quantity exceeds maximum position size ({max_short_position_size:.4f}).")
+        return
 
     try:
-        # Calculate the maximum allowed position size for both LONG and SHORT sides
-        account_info = client.futures_account()
-        balances = account_info['assets']
-        account_balance = sum(float(balance['walletBalance']) for balance in balances)
-        max_long_position_size, max_short_position_size = calculate_max_position_size(account_balance, symbol)
-
-        # Check if the desired quantity exceeds the maximum allowed size for the SHORT side
-        if desired_quantity > max_short_position_size:
-            context.bot.send_message(chat_id=chat_id, text=f"The desired position size ({desired_quantity}) exceeds the maximum allowed size ({max_short_position_size}) for the SHORT side.")
-            return
-
         # Create the short position
         order = client.futures_create_order(
             symbol=symbol,
             side=Client.SIDE_SELL,
-            quantity=desired_quantity,
+            quantity=quantity,
             type=Client.ORDER_TYPE_MARKET,
-            positionSide='SHORT'
+            positionSide=position_side
         )
 
-        context.bot.send_message(chat_id=chat_id, text=f"Hedge short position opened:\nSymbol: {symbol}\nQuantity: {desired_quantity}\nPosition Side: SHORT")
+        context.bot.send_message(chat_id=chat_id, text=f"Hedge short position opened:\nSymbol: {symbol}\nQuantity: {quantity}\nPosition Side: {position_side}")
     except Exception as e:
         context.bot.send_message(chat_id=chat_id, text=f"An error occurred: {e}")
+
+
 
 
 
