@@ -6,10 +6,14 @@ import time
 import random
 from binance.enums import KLINE_INTERVAL_1MINUTE
 import datetime
-
+import os
+import sys
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext
 from telegram import ReplyKeyboardMarkup, KeyboardButton
+
+from watchdog.observers import Observer  # Add this import
+from watchdog.events import FileSystemEventHandler  # Add this import
 
 
 API_KEY = '0gtKKENzEpaVaHne81pbd4FU5UW3sgGQVM7d5EHpa50WEwD3HPLcQyvGI8syKuiV'
@@ -99,7 +103,9 @@ def positions(update: Update, context: CallbackContext):
                     context.bot.edit_message_text(chat_id=chat_id, message_id=context.last_positions_message_id, text=modified_message)
             else:
                 # If no open positions
-                no_positions_message = "📊 You have no open positions."
+                no_positions_message = "📊 You have no open positions.\n"
+                current_time = datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                no_positions_message += f"{message}Last Updated: {current_time}"
                 
                 if hasattr(context, 'last_positions_message_id'):
                     context.bot.edit_message_text(chat_id=chat_id, message_id=context.last_positions_message_id, text=no_positions_message)
@@ -588,6 +594,22 @@ def transfer(update, context):
     except Exception as e:
         context.bot.send_message(chat_id=chat_id, text=f"An error occurred: {e}")
 
+
+def restart_bot():
+    print("Reloading bot...")
+    os.execv(sys.executable, ['python'] + sys.argv)
+
+class EventHandler(FileSystemEventHandler):
+    def on_modified(self, event):
+        if event.src_path.endswith(".py"):
+            restart_bot()
+
+# Add an event handler for file changes
+def on_file_change(event):
+
+    if event.src_path.endswith(".py"):
+        restart_bot()
+
 def main():
     updater = Updater(token=TELEGRAM_API_TOKEN, use_context=True)
     dp = updater.dispatcher
@@ -612,3 +634,17 @@ def main():
 
 if __name__ == "__main__":
     main()
+    import sys
+    from watchdog.observers import Observer
+
+    # Start the observer
+    observer = Observer()
+    observer.schedule(EventHandler(), path=".", recursive=False)
+    observer.start()
+
+    try:
+        main()
+    except KeyboardInterrupt:
+        observer.stop()
+    observer.join()
+
