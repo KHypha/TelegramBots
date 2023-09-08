@@ -159,7 +159,7 @@ def format_positions(positions):
     total_balance = sum(float(balance['walletBalance']) for balance in account_info['assets']) + unrealized_pnl
 
     total_unrealized_pnl = sum(float(position['unRealizedProfit']) for position in positions)
-    pnl_threshold = -total_balance * 0.2
+    pnl_threshold = -total_balance * 0.17
     formatted_messages = []
     formatted_message = ""
     # Display total unrealized PnL and total balance
