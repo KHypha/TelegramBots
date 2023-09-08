@@ -594,7 +594,98 @@ def transfer(update, context):
     except Exception as e:
         context.bot.send_message(chat_id=chat_id, text=f"An error occurred: {e}")
 
+def open_scalp_long(update, context):
+    chat_id = update.message.chat_id
 
+    # Check if the user provided the symbol and quantity
+    if len(context.args) != 2:
+        context.bot.send_message(chat_id=chat_id, text="Usage: /scalplong <symbol> <quantity>")
+        return
+
+    symbol = context.args[0]
+    quantity = float(context.args[1])
+    position_side = "LONG"  # Set position side to LONG
+
+    try:
+        # Create the long position for scalping
+        order = client.futures_create_order(
+            symbol=symbol,
+            side=Client.SIDE_BUY,
+            quantity=quantity,
+            type=Client.ORDER_TYPE_MARKET,
+            positionSide=position_side
+        )
+
+        context.bot.send_message(chat_id=chat_id, text=f"Scalp long position opened:\nSymbol: {symbol}\nQuantity: {quantity}\nPosition Side: {position_side}")
+
+        # Calculate the target price for the limit order with 0.17% profit based on the current market price
+        price_info = client.futures_mark_price(symbol=symbol)
+        market_price = float(price_info["markPrice"])
+        #marketprice = float(order['avgPrice'])
+        profit_target_price = round(market_price * 1.0021, 2) # 0.17% profit target
+
+        # Create the limit order with the profit target for scalping
+        limit_order = client.futures_create_order(
+            symbol=symbol,
+            side=Client.SIDE_SELL,
+            quantity=quantity,
+            price=profit_target_price,
+            type=Client.ORDER_TYPE_LIMIT,
+            timeInForce=Client.TIME_IN_FORCE_GTC,
+            positionSide=position_side
+        )
+
+        context.bot.send_message(chat_id=chat_id, text=f"Expected Entry: {market_price} \nLimit order for profit target created:\nSymbol: {symbol}\nSide: SELL\nQuantity: {quantity}\nPrice: {profit_target_price}\nPosition Side: {position_side}")
+    except Exception as e:
+        context.bot.send_message(chat_id=chat_id, text=f"An error occurred: {e}")
+
+def open_scalp_short(update, context):
+    chat_id = update.message.chat_id
+
+    # Check if the user provided the symbol and quantity
+    if len(context.args) != 2:
+        context.bot.send_message(chat_id=chat_id, text="Usage: /scalpshort <symbol> <quantity>")
+        return
+
+    symbol = context.args[0]
+    quantity = float(context.args[1])
+    position_side = "SHORT"  # Set position side to SHORT
+
+    try:
+        # Create the short position for scalping
+        order = client.futures_create_order(
+            symbol=symbol,
+            side=Client.SIDE_SELL,
+            quantity=quantity,
+            type=Client.ORDER_TYPE_MARKET,
+            positionSide=position_side
+        )
+
+        context.bot.send_message(chat_id=chat_id, text=f"Scalp short position opened:\nSymbol: {symbol}\nQuantity: {quantity}\nPosition Side: {position_side}")
+
+        # Calculate the target price for the limit order with 0.17% profit based on the current market price
+        price_info = client.futures_mark_price(symbol=symbol)
+        market_price = float(price_info["markPrice"])
+
+        #market_price = float(order['avgPrice'])
+        profit_target_price = round(market_price * 0.998, 2)  # 0.17% profit target (short position)
+
+        # Create the limit order with the profit target for scalping
+        limit_order = client.futures_create_order(
+            symbol=symbol,
+            side=Client.SIDE_BUY,
+            quantity=quantity,
+            price=profit_target_price,
+            type=Client.ORDER_TYPE_LIMIT,
+            timeInForce=Client.TIME_IN_FORCE_GTC,
+            positionSide=position_side
+        )
+
+        context.bot.send_message(chat_id=chat_id, text=f"Expected Entry: {market_price} \nLimit order for profit target created:\nSymbol: {symbol}\nSide: BUY\nQuantity: {quantity}\nPrice: {profit_target_price}\nPosition Side: {position_side}")
+    except Exception as e:
+        context.bot.send_message(chat_id=chat_id, text=f"An error occurred: {e}")
+
+            
 def restart_bot():
     print("Reloading bot...")
     os.execv(sys.executable, ['python'] + sys.argv)
@@ -620,6 +711,9 @@ def main():
     dp.add_handler(CommandHandler("long", open_long, pass_args=True))
     dp.add_handler(CommandHandler("short", open_short, pass_args=True))
     dp.add_handler(CommandHandler("stop_loss", stop_loss, pass_args=True))
+    dp.add_handler(CommandHandler("scalpshort", open_scalp_short, pass_args=True))
+    dp.add_handler(CommandHandler("scalplong", open_scalp_long, pass_args=True))
+
     dp.add_handler(CommandHandler("take_profit", take_profit, pass_args=True))
     dp.add_handler(CommandHandler("close", close_position, pass_args=True))
     dp.add_handler(CommandHandler("cancel", cancel_order, pass_args=True))
