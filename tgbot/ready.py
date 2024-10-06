@@ -91,11 +91,16 @@ def round_quantity_to_step_size(quantity, step_size):
 # Function to place limit order on Binance with quantity based on available USDT and leverage
 def place_limit_order(symbol, side):
     try:
-        # Fetch price and quantity precision
-        precision = get_symbol_precision(symbol)
-        if not precision:
+        # Fetch symbol info (precision, tick size, step size)
+        symbol_info = get_symbol_info(symbol)
+        if not symbol_info:
+            log_message(f"Error: Could not fetch symbol info for {symbol}")
             return
-        price_precision, quantity_precision = precision
+
+        price_precision = symbol_info['price_precision']
+        quantity_precision = symbol_info['quantity_precision']
+        tick_size = symbol_info['tick_size']
+        step_size = symbol_info['step_size']
 
         # Fetch market price (entry price)
         entry_price = get_market_price(symbol)
@@ -113,11 +118,9 @@ def place_limit_order(symbol, side):
         total_capital = usdt_balance * leverage
         quantity = total_capital / entry_price
 
-        # Round quantity according to the symbol's precision
+        # Round quantity to match precision and step size
         quantity = round(quantity, quantity_precision)
-      # Adjust quantity to match step size
         quantity = round_quantity_to_step_size(quantity, step_size)
-
 
         # Calculate take-profit price (1% target)
         if side == 'BUY':
@@ -128,10 +131,9 @@ def place_limit_order(symbol, side):
             log_message(f"Invalid side: {side}")
             return
 
-      # Adjust prices to match tick size
+        # Adjust prices to match tick size
         entry_price = round_price_to_tick_size(entry_price, tick_size)
         take_profit_price = round_price_to_tick_size(take_profit_price, tick_size)
-
 
         # Round prices according to the symbol's precision
         entry_price = round(entry_price, price_precision)
@@ -167,27 +169,46 @@ def place_limit_order(symbol, side):
 
         log_message(f"Entry order and take-profit order created:\n{order}\n{take_profit_order}")
         send_message_to_user(chat_id, f"Entry order and take-profit order created:\n{order}\n{take_profit_order}")
+        
     except Exception as e:
         log_message(f"Error placing limit order: {e}")
         send_message_to_user(chat_id, f"Error placing limit order: {e}")
 
+
 # Function to get symbol precision
-def get_symbol_precision(symbol):
+def get_symbol_info(symbol):
     try:
         exchange_info = client.futures_exchange_info()
         symbol_info = next((s for s in exchange_info['symbols'] if s['symbol'] == symbol), None)
-        
+
         if symbol_info is None:
             log_message(f"Symbol {symbol} not found.")
             return None
-        
+
+        # Get price and quantity precision
         price_precision = symbol_info['pricePrecision']
         quantity_precision = symbol_info['quantityPrecision']
         
-        return price_precision, quantity_precision
+        # Get tick size and step size from filters
+        tick_size = None
+        step_size = None
+        for f in symbol_info['filters']:
+            if f['filterType'] == 'PRICE_FILTER':
+                tick_size = float(f['tickSize'])
+            if f['filterType'] == 'LOT_SIZE':
+                step_size = float(f['stepSize'])
+
+        return {
+            'price_precision': price_precision,
+            'quantity_precision': quantity_precision,
+            'tick_size': tick_size,
+            'step_size': step_size
+        }
+
     except Exception as e:
-        log_message(f"Error fetching symbol precision: {e}")
+        log_message(f"Error fetching symbol info: {e}")
         return None
+
 
 # Flag to control email fetching
 is_fetching_signals = True
