@@ -82,7 +82,12 @@ def mark_email_as_read(service, msg_id):
     except Exception as e:
         log_message(f"Error marking email as read: {e}")
 
-# Function to place limit order on Binance
+
+def round_price_to_tick_size(price, tick_size):
+    return round(price / tick_size) * tick_size
+def round_quantity_to_step_size(quantity, step_size):
+    return round(quantity / step_size) * step_size
+
 # Function to place limit order on Binance with quantity based on available USDT and leverage
 def place_limit_order(symbol, side):
     try:
@@ -110,6 +115,9 @@ def place_limit_order(symbol, side):
 
         # Round quantity according to the symbol's precision
         quantity = round(quantity, quantity_precision)
+      # Adjust quantity to match step size
+        quantity = round_quantity_to_step_size(quantity, step_size)
+
 
         # Calculate take-profit price (1% target)
         if side == 'BUY':
@@ -119,6 +127,11 @@ def place_limit_order(symbol, side):
         else:
             log_message(f"Invalid side: {side}")
             return
+
+      # Adjust prices to match tick size
+        entry_price = round_price_to_tick_size(entry_price, tick_size)
+        take_profit_price = round_price_to_tick_size(take_profit_price, tick_size)
+
 
         # Round prices according to the symbol's precision
         entry_price = round(entry_price, price_precision)
