@@ -83,8 +83,10 @@ def mark_email_as_read(service, msg_id):
         log_message(f"Error marking email as read: {e}")
 
 # Function to place limit order on Binance
-def place_limit_order(symbol, side, quantity):
+# Function to place limit order on Binance with quantity based on available USDT and leverage
+def place_limit_order(symbol, side):
     try:
+        # Fetch price and quantity precision
         precision = get_symbol_precision(symbol)
         if not precision:
             return
@@ -96,29 +98,42 @@ def place_limit_order(symbol, side, quantity):
             log_message(f"Error: Could not fetch market price for {symbol}")
             return
 
-        # Calculate 0.7% take-profit price (adjusted as per your code)
+        # Get available USDT balance
+        account_info = client.futures_account_balance()
+        usdt_balance = next(item for item in account_info if item['asset'] == 'USDT')['balance']
+        usdt_balance = float(usdt_balance)
+
+        # Calculate quantity based on 10x leverage of available USDT
+        leverage = 10
+        total_capital = usdt_balance * leverage
+        quantity = total_capital / entry_price
+
+        # Round quantity according to the symbol's precision
+        quantity = round(quantity, quantity_precision)
+
+        # Calculate take-profit price (1% target)
         if side == 'BUY':
-            take_profit_price = entry_price * 1.007  # 0.7% higher for long positions
+            take_profit_price = entry_price * 1.0077  # 1% higher for long positions
         elif side == 'SELL':
-            take_profit_price = entry_price * 0.993  # 0.7% lower for short positions
+            take_profit_price = entry_price * 0.992  # 1% lower for short positions
         else:
             log_message(f"Invalid side: {side}")
             return
 
+        # Round prices according to the symbol's precision
         entry_price = round(entry_price, price_precision)
         take_profit_price = round(take_profit_price, price_precision)
-        quantity = round(quantity, quantity_precision)
 
         position_side = 'LONG' if side == 'BUY' else 'SHORT'
 
-        send_message_to_user(chat_id, f"Placing {side} order for {quantity} {symbol} at {entry_price} with 0.7% take-profit target at {take_profit_price}.")
-        log_message(f"Placing {side} order for {quantity} {symbol} at {entry_price} with 0.7% take-profit target at {take_profit_price}.")
-
+        # Place the entry limit order
+        send_message_to_user(chat_id, f"Placing {side} order for {quantity} {symbol} at {entry_price} with 1% take-profit target at {take_profit_price}.")
+        log_message(f"Placing {side} order for {quantity} {symbol} at {entry_price} with 1% take-profit target at {take_profit_price}.")
         order = client.futures_create_order(
             symbol=symbol,
             side=side,
             quantity=quantity,
-            price=entry_price,
+            price=entry_price,  # Rounded market price for entry
             type=Client.ORDER_TYPE_LIMIT,
             timeInForce=Client.TIME_IN_FORCE_GTC,
             positionSide=position_side
@@ -127,12 +142,11 @@ def place_limit_order(symbol, side, quantity):
         # Place the take-profit order
         log_message(f"Placing take-profit order at {take_profit_price}")
         send_message_to_user(chat_id, f"Placing take-profit order at {take_profit_price}")
-
         take_profit_order = client.futures_create_order(
             symbol=symbol,
-            side='SELL' if side == 'BUY' else 'BUY',
+            side='SELL' if side == 'BUY' else 'BUY',  # Opposite of the entry side
             quantity=quantity,
-            price=take_profit_price,
+            price=take_profit_price,  # Rounded take-profit price
             type=Client.ORDER_TYPE_LIMIT,
             timeInForce=Client.TIME_IN_FORCE_GTC,
             positionSide=position_side
@@ -210,12 +224,12 @@ def read_email_and_place_trade(service):
                 side = parts[0].upper()  # Buy or Sell
                 symbol = parts[1].upper()  # E.g., FIOUSDT
 
-                quantity = 2000
+                
 
                 if side in ['BUY', 'SELL']:
-                    log_message(f"Placing {side} order for {quantity} {symbol}")
-                    send_message_to_user(chat_id, f"Placing {side} order for {quantity} {symbol}")
-                    place_limit_order(symbol, side, quantity)
+                    log_message(f"Placing {side} order for {symbol}")
+                    send_message_to_user(chat_id, f"Placing {side} order for  {symbol}")
+                    place_limit_order(symbol, side)
                     mark_email_as_read(service, msg_id)
                 else:
                     log_message("Invalid side received in subject.")
