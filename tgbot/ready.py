@@ -81,7 +81,32 @@ def mark_email_as_read(service, msg_id):
         log_message(f"Email {msg_id} marked as read.")
     except Exception as e:
         log_message(f"Error marking email as read: {e}")
+# Function to send formatted order details
+def send_order_summary(chat_id, order, take_profit_order):
+    # Extract order details
+    symbol = order['symbol']
+    side = order['side']
+    quantity = order['origQty']
+    entry_price = order['price']
+    take_profit_price = take_profit_order['price']
+    order_id = order['orderId']
+    take_profit_order_id = take_profit_order['orderId']
 
+    # Format the message
+    side_emoji = "🟢" if side == 'BUY' else "🔴"
+    message = (
+        f"{side_emoji} *Order Summary*\n\n"
+        f"📈 *Symbol*: {symbol}\n"
+        f"💼 *Side*: {side}\n"
+        f"💰 *Quantity*: {quantity}\n"
+        f"🔖 *Entry Price*: {entry_price}\n"
+        f"🎯 *Take-Profit Price*: {take_profit_price}\n\n"
+        f"🆔 *Entry Order ID*: {order_id}\n"
+        f"🆔 *Take-Profit Order ID*: {take_profit_order_id}"
+    )
+
+    # Send the message to the user
+    bot.send_message(chat_id=chat_id, text=message, parse_mode='Markdown')
 
 def round_price_to_tick_size(price, tick_size):
     return round(price / tick_size) * tick_size
@@ -168,7 +193,8 @@ def place_limit_order(symbol, side):
         )
 
         log_message(f"Entry order and take-profit order created:\n{order}\n{take_profit_order}")
-        send_message_to_user(chat_id, f"Entry order and take-profit order created:\n{order}\n{take_profit_order}")
+        # Send formatted summary to user
+        send_order_summary(chat_id=chat_id, order=order, take_profit_order=take_profit_order)
         
     except Exception as e:
         log_message(f"Error placing limit order: {e}")
