@@ -199,7 +199,7 @@ def read_email_and_place_trade(service):
         result = service.users().messages().list(
             userId='me', 
             labelIds=['INBOX'], 
-            q='from:noreply@tradingview.com is:unread'
+            q='from:hyphakofi@gmail.com is:unread'
         ).execute()
         messages = result.get('messages', [])
 
