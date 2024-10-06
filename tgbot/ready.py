@@ -249,17 +249,15 @@ def get_symbol_info(symbol):
 # Flag to control email fetching
 is_fetching_signals = True
 
+
 # Function to read email and place trades based on email subjects
 def read_email_and_place_trade(service):
     global is_fetching_signals
     try:
-        # Define accepted email addresses
-        ACCEPTED_EMAILS = {'noreply@tradingview.com', 'hyphakofi@gmail.com'}  # Add your accepted emails here
-
         result = service.users().messages().list(
-            userId='me',
-            labelIds=['INBOX'],
-            q='is:unread'  # Removed the specific sender for flexibility
+            userId='me', 
+            labelIds=['INBOX'], 
+            q='from:noreply@tradingview.com OR from:hyphakofi@gmail.com is:unread'
         ).execute()
         messages = result.get('messages', [])
 
@@ -270,16 +268,6 @@ def read_email_and_place_trade(service):
         for msg in messages:
             msg_id = msg['id']
             message = service.users().messages().get(userId='me', id=msg_id).execute()
-
-            # Get the sender's email
-            sender = next(header['value'] for header in message['payload']['headers'] if header['name'] == 'From')
-            log_message(f"Email from: '{sender}'")
-
-            # Check if the sender is in the accepted emails list
-            if sender not in ACCEPTED_EMAILS:
-                log_message(f"Ignored signal from unaccepted email: {sender}")
-                mark_email_as_read(service, msg_id)  # Optionally mark as read
-                continue
 
             subject = next(header['value'] for header in message['payload']['headers'] if header['name'] == 'Subject')
             log_message(f"Email subject received: '{subject}'")
@@ -298,7 +286,7 @@ def read_email_and_place_trade(service):
                 continue
 
             if subject.startswith("Alert: "):
-                subject = subject[7:]  # Remove the "Alert: " prefix
+                subject = subject[7:]
 
             log_message(f"Processed subject: {subject}")
 
@@ -307,9 +295,11 @@ def read_email_and_place_trade(service):
                 side = parts[0].upper()  # Buy or Sell
                 symbol = parts[1].upper()  # E.g., FIOUSDT
 
+                
+
                 if side in ['BUY', 'SELL']:
                     log_message(f"Placing {side} order for {symbol}")
-                    send_message_to_user(chat_id, f"Placing {side} order for {symbol}")
+                    send_message_to_user(chat_id, f"Placing {side} order for  {symbol}")
                     place_limit_order(symbol, side)
                     mark_email_as_read(service, msg_id)
                 else:
@@ -321,6 +311,7 @@ def read_email_and_place_trade(service):
     except Exception as e:
         log_message(f"Error reading email: {e}")
         send_message_to_user(chat_id, f"Error reading email: {e}")
+
 
 # Function to periodically check emails in a separate thread
 def email_check_thread(service):
