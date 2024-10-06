@@ -178,6 +178,16 @@ def place_limit_order(symbol, side):
             timeInForce=Client.TIME_IN_FORCE_GTC,
             positionSide=position_side
         )
+      # Check if the entry order is filled
+        while True:
+            order_status = client.futures_get_order(symbol=symbol, orderId=order['orderId'])
+            if order_status['status'] == 'FILLED':
+                log_message(f"Entry order for {symbol} is filled.")
+                send_message_to_user(chat_id, f"✅ Entry order for {quantity} {symbol} at {entry_price} has been filled!")
+                break
+            else:
+                log_message(f"Waiting for entry order to be filled... Current status: {order_status['status']}")
+                time.sleep(5)  # Wait for 5 seconds before checking again
 
         # Place the take-profit order
         log_message(f"Placing take-profit order at {take_profit_price}")
