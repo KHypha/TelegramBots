@@ -24,7 +24,7 @@ logging.basicConfig(filename='trading_bot.log', level=logging.INFO,
 # API Keys
 BINANCE_API_KEY = os.getenv('TRADING_API_KEY')
 BINANCE_API_SECRET = os.getenv('TRADING_API_SECRET')
-TELEGRAM_API_TOKEN = os.getenv('PORTFOLIO_TOKEN')
+TELEGRAM_API_TOKEN = os.getenv('PRICE_TOKEN')
 
 # Set up Binance client
 client = Client(BINANCE_API_KEY, BINANCE_API_SECRET)
