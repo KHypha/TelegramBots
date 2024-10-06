@@ -10,18 +10,19 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext
 from telegram import ReplyKeyboardMarkup, KeyboardButton
 
+import os
+from dotenv import load_dotenv
 
-API_KEY = '5fyW0DEXWVCPOoCBRATcUsl44USDtBCovYCVNNv6LjBCjEwuH06W2L4Rc2YVwuUh'
-API_SECRET = 'C3HhLwDM88KLJlBirAVq1Yn94cP9Qu1HRGkI2qZ5ApN4sdcF1dlvHctPvAITxJkD'
+# Load environment variables from the .env file
+load_dotenv()
+
+API_KEY = os.getenv('REAL_API_KEY')
+API_SECRET = os.getenv('REAL_API_SECRET')
+
+TELEGRAM_API_TOKEN = os.getenv('PORTFOLIO_TOKEN')
 
 
 client = Client(API_KEY, API_SECRET)
-TELEGRAM_API_TOKEN = '6247332516:AAE8L_V1HKzNi0tpDVscKtiFhVxeyo-mu04'
-
-symbol = 'LTCUSDT'
-trade_quantity = 1
-short_term_period = 10
-long_term_period = 50
 
 def start(update: Update, context: CallbackContext):
     custom_keyboard = [
@@ -147,6 +148,28 @@ def balances(update: Update, context: CallbackContext):
     balances_thread.daemon = True  # Set as daemon thread to automatically terminate when the main program ends
     balances_thread.start()
 
+from binance.client import Client
+
+# Assuming the get_symbol_precision function is defined here
+def get_symbol_precision(symbol):
+    try:
+        # Fetch exchange info
+        exchange_info = client.futures_exchange_info()
+        symbol_info = next((s for s in exchange_info['symbols'] if s['symbol'] == symbol), None)
+        
+        if symbol_info is None:
+            print(f"Symbol {symbol} not found.")
+            return None
+        
+        # Get the price and quantity precision
+        price_precision = symbol_info['pricePrecision']
+        quantity_precision = symbol_info['quantityPrecision']
+        
+        return price_precision, quantity_precision
+    except Exception as e:
+        print(f"Error fetching symbol precision: {e}")
+        return None
+
 def format_positions(positions):
     # Fetch account information
     account_info = client.futures_account()
@@ -157,6 +180,7 @@ def format_positions(positions):
     
     formatted_messages = []
     formatted_message = ""
+    
     # Display total unrealized PnL and total balance
     formatted_message += f"Total Unrealized PnL: {total_unrealized_pnl:.4f}\n"
     formatted_message += f"Total Balance: {total_balance:.4f}\n\n"
@@ -170,11 +194,28 @@ def format_positions(positions):
         leverage = float(position['leverage'])
         roe = (((mark_price - entry_price) / entry_price) * 100) * leverage 
         shape = "🟢" if position['positionSide'] == "LONG" else "🔴"
-        roe = roe if position['positionSide'] == "LONG" else 0-roe
-        entry = f"{shape} {symbol} {leverage}✖️  Notional Size: {position_size}\n"
-        entry += f"📌 Entry Price: {entry_price:.4f} \n 💹Mark Price: {mark_price:.4f}\n"
-        entry += f"🍡 liq Price: {float(position['liquidationPrice']):.4f} \n"
+        roe = roe if position['positionSide'] == "LONG" else 0 - roe
+
+        # Fetch the price and quantity precision for the symbol
+        precision = get_symbol_precision(symbol)
+        if precision:
+            price_precision, quantity_precision = precision
+        else:
+            # Default to 2 decimal places if the precision could not be fetched
+            price_precision = 2
+            quantity_precision = 0
+
+        # Format prices and quantities according to their precision
+        entry_price_formatted = f"{entry_price:.{price_precision}f}"
+        mark_price_formatted = f"{mark_price:.{price_precision}f}"
+        liquidation_price_formatted = f"{float(position['liquidationPrice']):.{price_precision}f}"
+        position_size_formatted = f"{position_size:.{quantity_precision}f}"
+
+        entry = f"{shape} {symbol} {leverage}✖️  Notional Size: {position_size_formatted}\n"
+        entry += f"📌 Entry Price: {entry_price_formatted} \n 💹Mark Price: {mark_price_formatted}\n"
+        entry += f"🍡 liq Price: {liquidation_price_formatted} \n"
         entry += f"📈 PNL: {unrealized_pnl:.4f} ({roe:.4f}%)\n\n"
+
         if len(formatted_message) + len(entry) <= telegram.constants.MAX_MESSAGE_LENGTH:
             formatted_message += entry
         else:
