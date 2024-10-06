@@ -192,11 +192,11 @@ def read_email_and_place_trade(service):
             internal_date = int(message['internalDate'])  # in milliseconds
             email_time = datetime.fromtimestamp(internal_date / 1000)
             current_time = datetime.utcnow()
-            time_threshold = current_time - timedelta(minutes=10)  # Only process emails within the last 10 minutes
+            time_threshold = current_time - timedelta(minutes=2)  # Only process emails within the last 2 minutes
 
             if email_time < time_threshold:
-                log_message(f"Email {msg_id} is older than 10 minutes. Skipping.")
-                send_message_to_user(chat_id, f"Skipped processing email {msg_id} as it's older than 10 minutes.")
+                log_message(f"Email {msg_id} is older than 2 minutes. Skipping.")
+                send_message_to_user(chat_id, f"Skipped processing email {msg_id} as it's older than 2 minutes.")
                 mark_email_as_read(service, msg_id)  # Optionally mark as read to avoid reprocessing
                 continue
 
