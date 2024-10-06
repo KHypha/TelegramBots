@@ -16,8 +16,8 @@ from dotenv import load_dotenv
 # Load environment variables from the .env file
 load_dotenv()
 
-API_KEY = os.getenv('REAL_API_KEY')
-API_SECRET = os.getenv('REAL_API_SECRET')
+API_KEY = os.getenv('TRADING_API_KEY')
+API_SECRET = os.getenv('TRADING_API_SECRET')
 
 TELEGRAM_API_TOKEN = os.getenv('PORTFOLIO_TOKEN')
 
