@@ -13,6 +13,10 @@ import threading
 import time
 from datetime import datetime, timedelta
 
+# Flag to control email fetching
+is_fetching_signals = True
+
+
 # Load environment variables from .env file
 load_dotenv()
 chat_id = '1068035728'
@@ -83,30 +87,32 @@ def mark_email_as_read(service, msg_id):
         log_message(f"Error marking email as read: {e}")
 # Function to send formatted order details
 def send_order_summary(chat_id, order, take_profit_order):
-    # Extract order details
-    symbol = order['symbol']
-    side = order['side']
-    quantity = order['origQty']
-    entry_price = order['price']
-    take_profit_price = take_profit_order['price']
-    order_id = order['orderId']
-    take_profit_order_id = take_profit_order['orderId']
+    try:
+        # Extract relevant details from the orders
+        symbol = order['symbol']
+        side = order['side']
+        quantity = order['origQty']
+        entry_price = order['price']
+        take_profit_price = take_profit_order['price']
 
-    # Format the message
-    side_emoji = "🟢" if side == 'BUY' else "🔴"
-    message = (
-        f"{side_emoji} *Order Summary*\n\n"
-        f"📈 *Symbol*: {symbol}\n"
-        f"💼 *Side*: {side}\n"
-        f"💰 *Quantity*: {quantity}\n"
-        f"🔖 *Entry Price*: {entry_price}\n"
-        f"🎯 *Take-Profit Price*: {take_profit_price}\n\n"
-        f"🆔 *Entry Order ID*: {order_id}\n"
-        f"🆔 *Take-Profit Order ID*: {take_profit_order_id}"
-    )
+        # Format the message with the order details
+        message = (
+            f"Order Summary for {symbol}\n\n"
+            f"📊 *Side*: {side}\n"
+            f"📊 *Quantity*: {quantity}\n"
+            f"📊 *Entry Price*: `{entry_price}`\n"
+            f"📊 *Take-Profit Price*: `{take_profit_price}`\n\n"
+            f"💡 *Copy Details*: Tap and hold the price to copy.\n\n"
+            f"Entry Price: `{entry_price}`\n"
+            f"Take-Profit Price: `{take_profit_price}`"
+        )
 
-    # Send the message to the user
-    bot.send_message(chat_id=chat_id, text=message, parse_mode='Markdown')
+        # Send the message with click-to-copy feature (backticks around the price values for easy copying)
+        send_message_to_user(chat_id, message, parse_mode='Markdown')
+    
+    except Exception as e:
+        log_message(f"Error sending order summary: {e}")
+        send_message_to_user(chat_id, f"Error sending order summary: {e}")
 
 def round_price_to_tick_size(price, tick_size):
     return round(price / tick_size) * tick_size
@@ -167,8 +173,8 @@ def place_limit_order(symbol, side):
         position_side = 'LONG' if side == 'BUY' else 'SHORT'
 
         # Place the entry limit order
-        send_message_to_user(chat_id, f"Placing {side} order for {quantity} {symbol} at {entry_price} with 1% take-profit target at {take_profit_price}.")
-        log_message(f"Placing {side} order for {quantity} {symbol} at {entry_price} with 1% take-profit target at {take_profit_price}.")
+        send_message_to_user(chat_id, f"Placing {side} order for {quantity} {symbol} at {entry_price}.")
+        log_message(f"Placing {side} order for {quantity} {symbol} at {entry_price}.")
         order = client.futures_create_order(
             symbol=symbol,
             side=side,
@@ -178,7 +184,8 @@ def place_limit_order(symbol, side):
             timeInForce=Client.TIME_IN_FORCE_GTC,
             positionSide=position_side
         )
-      # Check if the entry order is filled
+
+        # Check if the entry order is filled
         while True:
             order_status = client.futures_get_order(symbol=symbol, orderId=order['orderId'])
             if order_status['status'] == 'FILLED':
@@ -189,22 +196,27 @@ def place_limit_order(symbol, side):
                 log_message(f"Waiting for entry order to be filled... Current status: {order_status['status']}")
                 time.sleep(5)  # Wait for 5 seconds before checking again
 
-        # Place the take-profit order
-        log_message(f"Placing take-profit order at {take_profit_price}")
-        send_message_to_user(chat_id, f"Placing take-profit order at {take_profit_price}")
-        take_profit_order = client.futures_create_order(
+        # Define trailing stop parameters
+        trailing_delta = 0.25  # 0.25% trailing delta (adjust as needed)
+        activation_price = take_profit_price  # Activation price set to the original take-profit price
+
+        # Place the trailing stop order
+        log_message(f"Placing trailing stop order for {quantity} {symbol}")
+        send_message_to_user(chat_id, f"Placing trailing stop order for {quantity} {symbol} with activation at {activation_price} and trailing delta of {trailing_delta}%.")
+
+        trailing_stop_order = client.futures_create_order(
             symbol=symbol,
             side='SELL' if side == 'BUY' else 'BUY',  # Opposite of the entry side
             quantity=quantity,
-            price=take_profit_price,  # Rounded take-profit price
-            type=Client.ORDER_TYPE_LIMIT,
+            type=Client.ORDER_TYPE_TRAILING_STOP_MARKET,
+            activationPrice=activation_price,  # The price at which the trailing stop becomes active
+            callbackRate=trailing_delta,  # Trailing stop percentage
             timeInForce=Client.TIME_IN_FORCE_GTC,
             positionSide=position_side
         )
 
-        log_message(f"Entry order and take-profit order created:\n{order}\n{take_profit_order}")
-        # Send formatted summary to user
-        send_order_summary(chat_id=chat_id, order=order, take_profit_order=take_profit_order)
+        log_message(f"Entry order and trailing stop order created:\n{order}\n{trailing_stop_order}")
+        send_order_summary(chat_id=chat_id, order=order, take_profit_order=trailing_stop_order)
         
     except Exception as e:
         log_message(f"Error placing limit order: {e}")
@@ -246,8 +258,7 @@ def get_symbol_info(symbol):
         return None
 
 
-# Flag to control email fetching
-is_fetching_signals = True
+
 
 
 # Function to read email and place trades based on email subjects
@@ -348,12 +359,12 @@ def limit_order(update, context):
     if len(user_input) != 5:
         message = (
             "Usage: /limit_order <symbol> <quantity> <side> <price> [positionSide]\n"
-            "/limit_order LTCUSDT 2 BUY 66.15 LONG\n"
-            "/limit_order LTCUSDT 2 SELL 66.5 LONG\n"
-            "/limit_order LTCUSDT 2 BUY 66.15 SHORT\n"
-            "/limit_order LTCUSDT 2 SELL 66.5 LONG"
+            "`/limit_order LTCUSDT 2 BUY 66.15 LONG`\n"
+            "`/limit_order LTCUSDT 2 SELL 66.5 LONG`\n"
+            "`/limit_order LTCUSDT 2 BUY 66.15 SHORT\n`"
+            "`/limit_order LTCUSDT 2 SELL 66.5 LONG`"
         )
-        send_message_to_user(chat_id, message)
+        send_message_to_user(chat_id, message, parse_mode='Markdown')
         return
 
     symbol = user_input[0]
@@ -377,7 +388,7 @@ def limit_order(update, context):
         )
         message = (
             f"Limit order created:\n"
-            f"Symbol: {symbol}\n"
+            f"Symbol: `{symbol}`\n"
             f"Side: {side}\n"
             f"Quantity: {quantity}\n"
             f"Price: {price}\n"
