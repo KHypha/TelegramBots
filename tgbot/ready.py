@@ -59,11 +59,15 @@ def authenticate_gmail():
     return build('gmail', 'v1', credentials=creds)
 
 # Function to send messages to the user
-def send_message_to_user(chat_id, message):
+def send_message_to_user(chat_id, message, parse_mode=None):
     try:
-        bot.send_message(chat_id=chat_id, text=message)
+        if parse_mode:
+            bot.send_message(chat_id=chat_id, text=message, parse_mode=parse_mode)
+        else:
+            bot.send_message(chat_id=chat_id, text=message)
     except Exception as e:
         logging.error(f"Error sending message to user: {e}")
+
 
 # Function to log messages
 def log_message(message):
