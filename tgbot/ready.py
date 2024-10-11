@@ -364,7 +364,7 @@ def limit_order(update, context):
             "`/limit_order LTCUSDT 2 BUY 66.15 SHORT\n`"
             "`/limit_order LTCUSDT 2 SELL 66.5 LONG`"
         )
-        send_message_to_user(chat_id, message, parse_mode='Markdown')
+        send_message_to_user(chat_id, message)
         return
 
     symbol = user_input[0]
