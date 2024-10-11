@@ -213,7 +213,7 @@ def place_limit_order(symbol, side):
             symbol=symbol,
             side='SELL' if side == 'BUY' else 'BUY',  # Opposite of the entry side
             quantity=quantity,
-            type=Client.ORDER_TYPE_TRAILING_STOP_MARKET,
+            type='TRAILING_STOP_MARKET',
             activationPrice=activation_price,  # The price at which the trailing stop becomes active
             callbackRate=trailing_delta,  # Trailing stop percentage
             timeInForce=Client.TIME_IN_FORCE_GTC,
