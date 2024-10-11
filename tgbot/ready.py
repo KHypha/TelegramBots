@@ -177,15 +177,17 @@ def place_limit_order(symbol, side):
 
         position_side = 'LONG' if side == 'BUY' else 'SHORT'
 
-        # Place the entry limit order
+        trailing_delta = 0.2  # 0.2% trailing delta 
         send_message_to_user(chat_id, f"Placing {side} order for {quantity} {symbol} at {entry_price}.")
         log_message(f"Placing {side} order for {quantity} {symbol} at {entry_price}.")
         order = client.futures_create_order(
             symbol=symbol,
             side=side,
             quantity=quantity,
-            price=entry_price,  # Rounded market price for entry
-            type=Client.ORDER_TYPE_LIMIT,
+            #price=entry_price,  # Rounded market price for entry
+            type='TRAILING_STOP_MARKET',
+            #activationPrice=activation_price,  # The price at which the trailing stop becomes active
+            callbackRate=trailing_delta,  # Trailing stop percentage
             timeInForce=Client.TIME_IN_FORCE_GTC,
             positionSide=position_side
         )
