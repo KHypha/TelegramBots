@@ -60,7 +60,7 @@ def authenticate_gmail():
     return build('gmail', 'v1', credentials=creds)
 
 # Function to send messages to the user
-def send_message_to_user1(chat_id, message, parse_mode=None):
+def send_message_to_user(chat_id, message, parse_mode=None):
     try:
         if parse_mode:
             bot.send_message(chat_id=chat_id, text=message, parse_mode=parse_mode)
