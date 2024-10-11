@@ -59,7 +59,7 @@ def authenticate_gmail():
     return build('gmail', 'v1', credentials=creds)
 
 # Function to send messages to the user
-def send_message_to_user(chat_id, message, parse_mode=None):
+def send_message_to_user1(chat_id, message, parse_mode=None):
     try:
         if parse_mode:
             bot.send_message(chat_id=chat_id, text=message, parse_mode=parse_mode)
@@ -368,7 +368,7 @@ def limit_order(update, context):
             "`/limit_order LTCUSDT 2 BUY 66.15 SHORT\n`"
             "`/limit_order LTCUSDT 2 SELL 66.5 LONG`"
         )
-        send_message_to_user(chat_id, message, parse_mode='Markdown')
+        send_message_to_user1(chat_id, message, parse_mode='Markdown')
         return
 
     symbol = user_input[0]
