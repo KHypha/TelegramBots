@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 import threading
 import time
 from datetime import datetime, timedelta
+import re
 
 # Flag to control email fetching
 is_fetching_signals = True
@@ -356,6 +357,11 @@ def stop(update, context):
         context.bot.send_message(chat_id=update.message.chat_id, text="Signal fetching is already stopped.")
 
 # Define a basic /limit_order Telegram bot command handler for manual testing
+def escape_markdown_v2(text):
+    # Escape characters that have special meaning in Markdown
+    escape_chars = r'_*[]()~>#+-=|{}.!'
+    return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
+
 def limit_order(update, context):
     chat_id = update.message.chat_id
     user_input = context.args
@@ -365,10 +371,10 @@ def limit_order(update, context):
             "Usage: /limit_order <symbol> <quantity> <side> <price> [positionSide]\n"
             "`/limit_order LTCUSDT 2 BUY 66.15 LONG`\n"
             "`/limit_order LTCUSDT 2 SELL 66.5 LONG`\n"
-            "`/limit_order LTCUSDT 2 BUY 66.15 SHORT\n`"
-            "`/limit_order LTCUSDT 2 SELL 66.5 LONG`"
+            "`/limit_order LTCUSDT 2 BUY 66.15 SHORT`\n"
+            "`/limit_order LTCUSDT 2 SELL 66.5 SHORT`"
         )
-        send_message_to_user1(chat_id, message, parse_mode='Markdown')
+        send_message_to_user(chat_id, escape_markdown_v2(message), parse_mode='MarkdownV2')
         return
 
     symbol = user_input[0]
@@ -392,13 +398,13 @@ def limit_order(update, context):
         )
         message = (
             f"Limit order created:\n"
-            f"Symbol: `{symbol}`\n"
-            f"Side: {side}\n"
+            f"Symbol: `{escape_markdown_v2(symbol)}`\n"
+            f"Side: {escape_markdown_v2(side)}\n"
             f"Quantity: {quantity}\n"
             f"Price: {price}\n"
-            f"Position Side: {position_side}"
+            f"Position Side: {escape_markdown_v2(position_side)}"
         )
-        send_message_to_user(chat_id, message)
+        send_message_to_user(chat_id, message, parse_mode='MarkdownV2')
     except Exception as e:
         send_message_to_user(chat_id, f"An error occurred: {e}")
 
