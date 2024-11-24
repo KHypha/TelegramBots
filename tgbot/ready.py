@@ -14,6 +14,8 @@ import time
 from datetime import datetime, timedelta
 import re
 
+# Initialize a set to track processed email IDs
+processed_emails = set()
 # Flag to control email fetching
 is_fetching_signals = True
 
@@ -160,9 +162,9 @@ def place_limit_order(symbol, side):
 
         # Calculate take-profit price (1% target)
         if side == 'BUY':
-            take_profit_price = entry_price * 1.0077  # 1% higher for long positions
+            take_profit_price = entry_price * 1.009  # 1% higher for long positions
         elif side == 'SELL':
-            take_profit_price = entry_price * 0.992  # 1% lower for short positions
+            take_profit_price = entry_price * 0.99  # 1% lower for short positions
         else:
             log_message(f"Invalid side: {side}")
             return
@@ -177,17 +179,15 @@ def place_limit_order(symbol, side):
 
         position_side = 'LONG' if side == 'BUY' else 'SHORT'
 
-        trailing_delta = 0.2  # 0.2% trailing delta 
+        # Place the entry limit order
         send_message_to_user(chat_id, f"Placing {side} order for {quantity} {symbol} at {entry_price}.")
         log_message(f"Placing {side} order for {quantity} {symbol} at {entry_price}.")
         order = client.futures_create_order(
             symbol=symbol,
             side=side,
             quantity=quantity,
-            #price=entry_price,  # Rounded market price for entry
-            type='TRAILING_STOP_MARKET',
-            #activationPrice=activation_price,  # The price at which the trailing stop becomes active
-            callbackRate=trailing_delta,  # Trailing stop percentage
+            price=entry_price,  # Rounded market price for entry
+            type=Client.ORDER_TYPE_LIMIT,
             timeInForce=Client.TIME_IN_FORCE_GTC,
             positionSide=position_side
         )
@@ -270,7 +270,7 @@ def get_symbol_info(symbol):
 
 # Function to read email and place trades based on email subjects
 def read_email_and_place_trade(service):
-    global is_fetching_signals
+    global is_fetching_signals, processed_emails
     try:
         result = service.users().messages().list(
             userId='me', 
@@ -285,6 +285,12 @@ def read_email_and_place_trade(service):
 
         for msg in messages:
             msg_id = msg['id']
+            
+            # Skip already processed emails
+            if msg_id in processed_emails:
+                log_message(f"Email {msg_id} has already been processed. Skipping.")
+                continue
+            
             message = service.users().messages().get(userId='me', id=msg_id).execute()
 
             subject = next(header['value'] for header in message['payload']['headers'] if header['name'] == 'Subject')
@@ -313,13 +319,11 @@ def read_email_and_place_trade(service):
                 side = parts[0].upper()  # Buy or Sell
                 symbol = parts[1].upper()  # E.g., FIOUSDT
 
-                
-
                 if side in ['BUY', 'SELL']:
                     log_message(f"Placing {side} order for {symbol}")
-                    send_message_to_user(chat_id, f"Placing {side} order for  {symbol}")
                     place_limit_order(symbol, side)
                     mark_email_as_read(service, msg_id)
+                    processed_emails.add(msg_id)  # Add email ID to processed set
                 else:
                     log_message("Invalid side received in subject.")
                     send_message_to_user(chat_id, "Invalid side received in subject.")
