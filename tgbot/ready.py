@@ -13,6 +13,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 import re
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
 # Initialize a set to track processed email IDs
 processed_emails = set()
@@ -474,6 +475,38 @@ def escape_markdown_v2(text):
     escape_chars = r'_*[]()~>#+-=|{}.!'
     return re.sub(f'([{re.escape(escape_chars)}])', r'\\\1', text)
 
+def balances(update: Update, context: CallbackContext):
+    chat_id = update.message.chat_id
+
+    def update_balances():
+        while True:
+            account_info = client.futures_account()
+            balances = account_info['assets']
+            unrealized_pnl = float(account_info["totalUnrealizedProfit"])
+            
+            total_balance = sum(float(balance['walletBalance']) for balance in balances) + unrealized_pnl
+            
+            message = f"💰 Total Balance: 💲{total_balance:.4f}\n\n📈 Asset Balances:\n"
+            message += f"🤑 Unrealized PnL: 💲{unrealized_pnl:.4f}\n"
+            for balance in balances:
+                if float(balance['walletBalance']) > 0.0:
+                    message += f"💳 {balance['asset']}: 💲{float(balance['walletBalance']):.4f}\n"
+            
+            # Get the current time in HH:MM:SS.mmm format
+            current_time = datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]
+            modified_message = f"{message}Last Updated: {current_time}"
+            
+            if not hasattr(context, 'last_balances_message_id'):
+                message = context.bot.send_message(chat_id=chat_id, text=modified_message)
+                context.last_balances_message_id = message.message_id
+            else:
+                context.bot.edit_message_text(chat_id=chat_id, message_id=context.last_balances_message_id, text=modified_message)
+
+            time.sleep(5)  # Update every second
+    balances_thread = threading.Thread(target=update_balances)
+    balances_thread.daemon = True  # Set as daemon thread to automatically terminate when the main program ends
+    balances_thread.start()
+
 def limit_order(update, context):
     chat_id = update.message.chat_id
     user_input = context.args
@@ -524,6 +557,8 @@ def limit_order(update, context):
 updater.dispatcher.add_handler(CommandHandler('start', start))
 updater.dispatcher.add_handler(CommandHandler('stop', stop))
 updater.dispatcher.add_handler(CommandHandler('limit_order', limit_order))
+updater.dispatcher.add_handler(CommandHandler('balances', balances))
+
 
 # Main function to run the bot
 def main():
