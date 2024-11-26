@@ -127,6 +127,84 @@ def round_quantity_to_step_size(quantity, step_size):
     return round(quantity / step_size) * step_size
 
 # Function to place limit order on Binance with quantity based on available USDT and leverage
+def get_realized_pnl(symbol, position_side):
+    """
+    Fetch the realized PnL for the most recent closed position for a given symbol and position side.
+    
+    Args:
+        client: Binance API client instance.
+        symbol (str): Trading pair symbol, e.g., 'FIOUSDT'.
+        position_side (str): 'LONG' or 'SHORT'.
+    
+    Returns:
+        float: Realized PnL in USDT, or 0.0 if no PnL is found.
+    """
+    try:
+        # Fetch futures income history for 'REALIZED_PNL'
+        income_history = client.futures_income_history(
+            symbol=symbol,
+            incomeType='REALIZED_PNL',
+            limit=10  # Fetch the last 10 entries to ensure coverage
+        )
+
+        # Filter income history for the correct position side
+        if not income_history:
+            log_message(f"No realized PnL history found for {symbol} {position_side}.")
+            return 0.0
+
+        # Get the most recent entry matching the position side
+        for entry in income_history:
+            if entry['symbol'] == symbol:
+                realized_pnl = float(entry['income'])
+                log_message(f"Realized PnL for {symbol} {position_side}: {realized_pnl} USDT.")
+                return realized_pnl
+
+        log_message(f"No matching PnL found for {symbol} {position_side}.")
+        return 0.0
+
+    except Exception as e:
+        log_message(f"Error fetching realized PnL: {e}")
+        return 0.0
+
+def transfer_profit_to_spot_wallet(profit, symbol, position_side, chat_id):
+    """
+    Transfer 30% of the profit from the futures wallet to the spot wallet.
+    
+    Args:
+        client: Binance API client instance.
+        profit (float): The profit amount in USDT.
+        symbol (str): Trading pair symbol.
+        position_side (str): 'LONG' or 'SHORT'.
+        chat_id (int): Telegram chat ID to send notifications.
+    
+    Returns:
+        None
+    """
+    try:
+        if profit > 0:
+            transfer_amount = profit * 0.3  # 30% of the profit
+            transfer_response = client.futures_account_transfer(
+                asset='USDT',  # Assuming USDT is the trading asset
+                amount=transfer_amount,
+                type=2  # Type 2 is for transfer from Futures to Spot
+            )
+
+            log_message(f"Transferred {transfer_amount} USDT from Futures to Spot wallet. Response: {transfer_response}")
+            send_message_to_user(
+                chat_id,
+                f"✅ Transferred {transfer_amount} USDT from Futures to Spot wallet."
+            )
+        else:
+            log_message(f"No profit to transfer for {symbol} {position_side}. Profit: {profit} USDT.")
+            send_message_to_user(
+                chat_id,
+                f"No profit to transfer for {symbol} {position_side}. Total profit was {profit:.2f} USDT."
+            )
+    except Exception as e:
+        log_message(f"Error during transfer to spot wallet: {e}")
+        send_message_to_user(chat_id, f"Error transferring profit to Spot wallet: {e}")
+
+# Function to place limit order on Binance with quantity based on available USDT and leverage
 def place_limit_order(symbol, side):
     try:
         # Fetch symbol info (precision, tick size, step size)
@@ -162,9 +240,9 @@ def place_limit_order(symbol, side):
 
         # Calculate take-profit price (1% target)
         if side == 'BUY':
-            take_profit_price = entry_price * 1.009  # 1% higher for long positions
+            take_profit_price = entry_price * 1.0077  # 1% higher for long positions
         elif side == 'SELL':
-            take_profit_price = entry_price * 0.99  # 1% lower for short positions
+            take_profit_price = entry_price * 0.992  # 1% lower for short positions
         else:
             log_message(f"Invalid side: {side}")
             return
@@ -224,13 +302,39 @@ def place_limit_order(symbol, side):
 
         log_message(f"Entry order and trailing stop order created:\n{order}\n{trailing_stop_order}")
         send_order_summary(chat_id=chat_id, order=order, take_profit_order=trailing_stop_order)
-      
+        # Track the position based on its side (long or short)
+        position_side = 'LONG' if side == 'BUY' else 'SHORT'
+
+        # Monitor the position for closure and calculate PNL
+        
+        # Monitor the position for closure
+        while True:
+            position_info = client.futures_position_information(symbol=symbol)
+            position = next((p for p in position_info if p['symbol'] == symbol and p['positionSide'] == position_side), None)
+
+            if position and float(position['positionAmt']) == 0:
+                # Position is closed, fetch the realized PnL
+                realized_pnl = get_realized_pnl(symbol, position_side)
+                pnl_status = "profit" if realized_pnl > 0 else "loss"
+                send_message_to_user(
+                    chat_id,
+                    f"✅ Your {symbol} {position_side} position has been closed. You made a {pnl_status} of {abs(realized_pnl)} USDT!"
+                )
+                log_message(f"Position closed for {symbol} {position_side}, realized PNL: {realized_pnl} USDT.")
+                
+                # Transfer profit to spot wallet if applicable
+                transfer_profit_to_spot_wallet(realized_pnl, symbol, position_side, chat_id)
+
+                break
+            else:
+                log_message(f"Waiting for {position_side} position to close for {symbol}...")
+                time.sleep(60)  # Wait for 60 seconds before checking again
+
 
         
     except Exception as e:
         log_message(f"Error placing limit order: {e}")
         send_message_to_user(chat_id, f"Error placing limit order: {e}")
-
 
 # Function to get symbol precision
 def get_symbol_info(symbol):
