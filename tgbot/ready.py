@@ -224,39 +224,7 @@ def place_limit_order(symbol, side):
 
         log_message(f"Entry order and trailing stop order created:\n{order}\n{trailing_stop_order}")
         send_order_summary(chat_id=chat_id, order=order, take_profit_order=trailing_stop_order)
-      # Monitor the position for closure and calculate PNL
-        while True:
-            position_info = client.futures_position_information(symbol=symbol)
-            position = next((p for p in position_info if p['symbol'] == symbol and p['positionSide'] == position_side), None)
-
-            if position and float(position['positionAmt']) == 0:
-                # Position is closed, check PNL for this side
-                realized_pnl = float(position['realizedPnl'])
-                pnl_status = "profit" if realized_pnl > 0 else "loss"
-                send_message_to_user(
-                    chat_id,
-                    f"✅ Your {symbol} {position_side} position has been closed. You made a {pnl_status} of {abs(realized_pnl)} USDT!"
-                )
-                log_message(f"Position closed for {symbol} {position_side}, realized PNL: {realized_pnl} USDT.")
-                
-                # Transfer 30% of the profit to the spot wallet if the PNL is positive
-                if realized_pnl > 0:
-                    transfer_amount = realized_pnl * 0.3  # 30% of the profit
-                    transfer_response = client.futures_transfer(
-                        asset='USDT',  # Assuming you are using USDT
-                        amount=transfer_amount,
-                        type=1  # Type 1 is for transfer from futures to spot
-                    )
-                    send_message_to_user(
-                        chat_id,
-                        f"✅ Transferred {transfer_amount} USDT from Futures to Spot wallet."
-                    )
-                    log_message(f"Transferred {transfer_amount} USDT from Futures to Spot wallet.")
-
-                break
-            else:
-                log_message(f"Waiting for {position_side} position to close for {symbol}...")
-                time.sleep(60)  # Wait for 60 seconds before checking again
+      
 
         
     except Exception as e:
