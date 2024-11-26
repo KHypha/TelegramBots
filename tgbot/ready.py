@@ -14,7 +14,7 @@ import time
 from datetime import datetime, timedelta
 import re
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
-
+from telegram import Update
 # Initialize a set to track processed email IDs
 processed_emails = set()
 # Flag to control email fetching
