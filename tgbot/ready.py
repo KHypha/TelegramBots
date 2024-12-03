@@ -303,34 +303,7 @@ def place_limit_order(symbol, side):
 
         log_message(f"Entry order and trailing stop order created:\n{order}\n{trailing_stop_order}")
         send_order_summary(chat_id=chat_id, order=order, take_profit_order=trailing_stop_order)
-        # Track the position based on its side (long or short)
-        position_side = 'LONG' if side == 'BUY' else 'SHORT'
-
-        # Monitor the position for closure and calculate PNL
         
-        # Monitor the position for closure
-        while True:
-            position_info = client.futures_position_information(symbol=symbol)
-            position = next((p for p in position_info if p['symbol'] == symbol and p['positionSide'] == position_side), None)
-
-            if position and float(position['positionAmt']) == 0:
-                # Position is closed, fetch the realized PnL
-                realized_pnl = get_realized_pnl(symbol, position_side)
-                pnl_status = "profit" if realized_pnl > 0 else "loss"
-                send_message_to_user(
-                    chat_id,
-                    f"✅ Your {symbol} {position_side} position has been closed. You made a {pnl_status} of {abs(realized_pnl)} USDT!"
-                )
-                log_message(f"Position closed for {symbol} {position_side}, realized PNL: {realized_pnl} USDT.")
-                
-                # Transfer profit to spot wallet if applicable
-                transfer_profit_to_spot_wallet(realized_pnl, symbol, position_side, chat_id)
-
-                break
-            else:
-                log_message(f"Waiting for {position_side} position to close for {symbol}...")
-                time.sleep(60)  # Wait for 60 seconds before checking again
-
 
         
     except Exception as e:
